@@ -1,0 +1,3 @@
+C:/web/nexuslink/pc-server/build/CMakeFiles/nexus-server.dir
+C:/web/nexuslink/pc-server/build/CMakeFiles/edit_cache.dir
+C:/web/nexuslink/pc-server/build/CMakeFiles/rebuild_cache.dir
