@@ -1,7 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"C:/web/nexuslink/pc-server/build/cmake_install.cmake"
-	],
-	"Parallel" : false
-}
