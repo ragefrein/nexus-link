@@ -4,8 +4,15 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.util.Log
+import android.view.Gravity
+import android.view.View
+import android.view.WindowManager
+import android.graphics.Color
+import android.graphics.PixelFormat
 import androidx.appcompat.app.AppCompatActivity
 import java.net.DatagramPacket
 import java.net.DatagramSocket
@@ -22,6 +29,12 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        // Request SYSTEM_ALERT_WINDOW permission if not granted
+        if (!Settings.canDrawOverlays(this)) {
+            val intentOverlay = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
+            startActivity(intentOverlay)
+        }
 
         // Handle text shared from other apps
         if (intent?.action == Intent.ACTION_SEND && intent.type == "text/plain") {
@@ -62,6 +75,55 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
+    // --- Floating Bubble for Android 10+ Clipboard Injection ---
+    private fun showFloatingClipboardButton(text: String) {
+        if (!Settings.canDrawOverlays(this)) {
+            Log.e("NEXUS", "Missing overlay permission.")
+            return
+        }
+
+        runOnUiThread {
+            val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            
+            val bubble = android.widget.Button(this)
+            bubble.text = "📋"
+            bubble.textSize = 24f
+            bubble.setBackgroundColor(Color.parseColor("#333333"))
+            bubble.setTextColor(Color.WHITE)
+
+            val params = WindowManager.LayoutParams(
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                PixelFormat.TRANSLUCENT
+            )
+            params.gravity = Gravity.CENTER_VERTICAL or Gravity.END
+
+            bubble.setOnClickListener {
+                // Launch transparent activity to securely gain focus and inject clipboard
+                val intent = Intent(this, TransparentActivity::class.java)
+                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                intent.putExtra("CLIP_TEXT", text)
+                startActivity(intent)
+
+                if (bubble.parent != null) {
+                    windowManager.removeView(bubble)
+                }
+            }
+
+            windowManager.addView(bubble, params)
+
+            // Auto-click the button after 1 second for visual feedback!
+            bubble.postDelayed({
+                if (bubble.parent != null) {
+                    bubble.performClick()
+                }
+            }, 1000)
+        }
+    }
+    // -----------------------------------------------------------
 
     private fun sendTextToPc(text: String) {
         thread {
@@ -135,12 +197,7 @@ class MainActivity : AppCompatActivity() {
                     val clipboardContent = incomingMsg.substring(5)
                     lastClipboardText = clipboardContent
                     
-                    runOnUiThread {
-                        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        val clip = ClipData.newPlainText("Nexus", clipboardContent)
-                        clipboard.setPrimaryClip(clip)
-                        Log.d("NEXUS", "Clipboard synced: $clipboardContent")
-                    }
+                    showFloatingClipboardButton(clipboardContent)
                 }
             }
         } catch (e: Exception) {
