@@ -8,9 +8,12 @@
 /android-client/.idea/
 /android-client/**/*.apk
 /android-client/**/*.aab
+/android-client/**/*.iml
+/android-client/app/release/
+/android-client/app/debug/
 
 # ========================
-# PC SERVER (C++ / CMake)
+# PC SERVER (C++ / g++)
 # ========================
 /pc-server/build/
 /pc-server/build2/
@@ -19,10 +22,16 @@
 /pc-server/CMakeFiles/
 /pc-server/*.exe
 /pc-server/*.obj
+/pc-server/*.o
+/pc-server/*.log
+/pc-server/err.txt
+/pc-server/out.txt
 
 # ========================
 # UMUM (OS & Editor)
 # ========================
 .vscode/
+.idea/
+*.iml
 .DS_Store
 Thumbs.db
