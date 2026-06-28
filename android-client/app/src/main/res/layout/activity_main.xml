@@ -1,14 +1,279 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.coordinatorlayout.widget.CoordinatorLayout 
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:gravity="center"
-    android:orientation="vertical">
+    android:background="#f8f9fa">
 
-    <TextView
-        android:layout_width="wrap_content"
+    <com.google.android.material.appbar.AppBarLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Hello World"
-        android:textSize="24sp" />
+        android:background="#ffffff">
+            <androidx.appcompat.widget.Toolbar
+                android:id="@+id/toolbar"
+                android:layout_width="match_parent"
+                android:layout_height="?attr/actionBarSize"
+                app:title="NexusLink"
+                app:titleTextColor="#00459a" />
+    </com.google.android.material.appbar.AppBarLayout>
 
-</LinearLayout>
+    <androidx.core.widget.NestedScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <!-- Bento Grid - Status Koneksi -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                app:cardBackgroundColor="#ffffff"
+                app:cardCornerRadius="12dp"
+                app:cardElevation="2dp"
+                app:strokeColor="#e1e3e4"
+                app:strokeWidth="1dp">
+                
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="16dp">
+                    
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+                        
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Status Koneksi"
+                            android:drawableStart="@drawable/ic_wifi"
+                            android:drawablePadding="8dp"
+                            android:drawableTint="#22c55e"
+                            android:gravity="center_vertical"
+                            android:textSize="12sp"
+                            android:textColor="#424753" />
+                        
+                        <TextView
+                            android:id="@+id/tvConnectionStatus"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Mencari PC..."
+                            android:textSize="18sp"
+                            android:textStyle="bold"
+                            android:textColor="#191c1d"
+                            android:layout_marginTop="4dp" />
+    
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Jaringan Lokal Aktif"
+                            android:textSize="14sp"
+                            android:textColor="#424753"
+                            android:layout_marginTop="16dp" />
+                    </LinearLayout>
+                    
+                    <ImageView
+                        android:id="@+id/ivDeviceIcon"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:src="@drawable/ic_desktop"
+                        app:tint="#00459a"
+                        android:visibility="gone" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Baterai Laptop -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="24dp"
+                app:cardBackgroundColor="#ffffff"
+                app:cardCornerRadius="12dp"
+                app:cardElevation="2dp"
+                app:strokeColor="#e1e3e4"
+                app:strokeWidth="1dp">
+                
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:padding="16dp"
+                    android:gravity="center_vertical">
+                    
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Baterai Perangkat Terkoneksi"
+                            android:drawableStart="@drawable/ic_battery_charging"
+                            android:drawablePadding="8dp"
+                            android:drawableTint="#00459a"
+                            android:gravity="center_vertical"
+                            android:textSize="12sp"
+                            android:textColor="#424753" />
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="bottom">
+                            <TextView
+                                android:id="@+id/tvBatteryLevel"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="--%"
+                                android:textSize="32sp"
+                                android:textStyle="bold"
+                                android:textColor="#191c1d" />
+                            <TextView
+                                android:id="@+id/tvBatteryState"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Unknown"
+                                android:textSize="14sp"
+                                android:textColor="#00459a"
+                                android:layout_marginStart="8dp"
+                                android:layout_marginBottom="6dp" />
+                        </LinearLayout>
+                    </LinearLayout>
+                    
+                    <!-- Custom Battery Icon (HTML-like) -->
+                    <RelativeLayout
+                        android:layout_width="68dp"
+                        android:layout_height="32dp"
+                        android:layout_gravity="center_vertical">
+                        
+                        <FrameLayout
+                            android:id="@+id/batteryBody"
+                            android:layout_width="64dp"
+                            android:layout_height="32dp"
+                            android:background="@drawable/battery_outline"
+                            android:padding="2dp">
+                            
+                            <View
+                                android:id="@+id/vBatteryFill"
+                                android:layout_width="0dp"
+                                android:layout_height="match_parent"
+                                android:background="@drawable/battery_fill" />
+                        </FrameLayout>
+                        
+                        <View
+                            android:layout_width="4dp"
+                            android:layout_height="12dp"
+                            android:layout_centerVertical="true"
+                            android:layout_toEndOf="@id/batteryBody"
+                            android:background="@drawable/battery_terminal" />
+                    </RelativeLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Tindakan Cepat"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:textColor="#191c1d"
+                android:layout_marginBottom="8dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="24dp">
+                
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnSendFile"
+                    android:layout_width="0dp"
+                    android:layout_height="100dp"
+                    android:layout_weight="1"
+                    android:text="Kirim\nFile"
+                    app:icon="@drawable/ic_file"
+                    app:iconGravity="top"
+                    app:iconSize="32dp"
+                    app:backgroundTint="#00459a"
+                    android:textColor="#ffffff"
+                    app:cornerRadius="8dp"
+                    android:layout_marginEnd="8dp" />
+                    
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnSendClipboard"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="100dp"
+                    android:layout_weight="1"
+                    android:text="Kirim\nClipboard"
+                    app:icon="@drawable/ic_copy"
+                    app:iconGravity="top"
+                    app:iconSize="32dp"
+                    app:strokeColor="#00459a"
+                    android:textColor="#00459a"
+                    app:cornerRadius="8dp"
+                    android:layout_marginStart="8dp" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Aktivitas Terakhir"
+                android:drawableStart="@drawable/ic_history"
+                android:drawablePadding="8dp"
+                android:drawableTint="#00459a"
+                android:gravity="center_vertical"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:textColor="#191c1d"
+                android:layout_marginBottom="8dp" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardBackgroundColor="#ffffff"
+                app:cardCornerRadius="12dp"
+                app:cardElevation="2dp"
+                app:strokeColor="#e1e3e4"
+                app:strokeWidth="1dp">
+                
+                <LinearLayout
+                    android:id="@+id/activityContainer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    
+                    <TextView
+                        android:id="@+id/tvEmptyActivity"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Belum ada aktivitas"
+                        android:padding="16dp"
+                        android:textColor="#424753" />
+                        
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+
+    <!-- Bottom Navigation -->
+    <com.google.android.material.bottomnavigation.BottomNavigationView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="#f8f9fa"
+        app:menu="@menu/bottom_nav_menu" />
+
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

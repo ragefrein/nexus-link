@@ -13,6 +13,10 @@ import android.view.View
 import android.view.WindowManager
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.widget.Button
+import android.widget.TextView
+import android.widget.Toast
+import android.widget.ProgressBar
 import androidx.appcompat.app.AppCompatActivity
 import java.net.DatagramPacket
 import java.net.DatagramSocket
@@ -29,6 +33,29 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        // Initialize Native Views
+        val btnSendFile = findViewById<Button>(R.id.btnSendFile)
+        val btnSendClipboard = findViewById<Button>(R.id.btnSendClipboard)
+
+        btnSendFile.setOnClickListener {
+            val intent = Intent(Intent.ACTION_GET_CONTENT)
+            intent.type = "*/*"
+            startActivityForResult(intent, 101)
+        }
+
+        btnSendClipboard.setOnClickListener {
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            if (clipboard.hasPrimaryClip() && clipboard.primaryClip != null) {
+                val text = clipboard.primaryClip!!.getItemAt(0).text?.toString()
+                if (text != null) {
+                    sendTextToPc(text)
+                    updateActivityList("content_copy", "Mengirim Teks Clipboard", "Baru saja", "done")
+                } else {
+                    Toast.makeText(this, "Clipboard kosong", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+
         // Request SYSTEM_ALERT_WINDOW permission if not granted
         if (!Settings.canDrawOverlays(this)) {
             val intentOverlay = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
@@ -37,6 +64,14 @@ class MainActivity : AppCompatActivity() {
 
         thread {
             discoverAndConnectPc()
+        }
+
+        // Load recent activity from SharedPreferences
+        val prefs = getSharedPreferences("NexusPrefs", Context.MODE_PRIVATE)
+        val lastTitle = prefs.getString("LAST_ACT_TITLE", null)
+        val lastSub = prefs.getString("LAST_ACT_SUB", null)
+        if (lastTitle != null && lastSub != null) {
+            updateActivityList("folder_zip", lastTitle, lastSub, "done")
         }
 
         // Monitor local clipboard changes
@@ -50,6 +85,17 @@ class MainActivity : AppCompatActivity() {
                     sendTextToPc(text)
                 }
             }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Reload recent activity in case it was updated while app was in background
+        val prefs = getSharedPreferences("NexusPrefs", Context.MODE_PRIVATE)
+        val lastTitle = prefs.getString("LAST_ACT_TITLE", null)
+        val lastSub = prefs.getString("LAST_ACT_SUB", null)
+        if (lastTitle != null && lastSub != null) {
+            updateActivityList("folder_zip", lastTitle, lastSub, "done")
         }
     }
 
@@ -131,6 +177,41 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun updateConnectionUI(isConnected: Boolean, ip: String) {
+        runOnUiThread {
+            val tvConnectionStatus = findViewById<TextView>(R.id.tvConnectionStatus)
+            if (isConnected) {
+                tvConnectionStatus.text = "Terhubung ke $ip"
+            } else {
+                tvConnectionStatus.text = "Mencari PC..."
+            }
+        }
+    }
+
+    private fun updateActivityList(iconName: String, title: String, subtitle: String, statusIconName: String) {
+        runOnUiThread {
+            val tvEmptyActivity = findViewById<TextView>(R.id.tvEmptyActivity)
+            tvEmptyActivity.text = "$title\n$subtitle"
+            tvEmptyActivity.setTextColor(Color.parseColor("#191c1d"))
+            
+            // Map icon string to drawable resource
+            val startRes = when(iconName) {
+                "image" -> R.drawable.ic_image
+                "content_paste" -> R.drawable.ic_copy
+                "folder_zip" -> R.drawable.ic_file
+                else -> R.drawable.ic_file
+            }
+            
+            val endRes = when(statusIconName) {
+                "done" -> R.drawable.ic_check_circle
+                else -> 0
+            }
+            
+            tvEmptyActivity.setCompoundDrawablesWithIntrinsicBounds(startRes, 0, endRes, 0)
+            tvEmptyActivity.compoundDrawablePadding = 24 // 24px padding
+        }
+    }
+
     private fun discoverAndConnectPc() {
         try {
             val udpSocket = DatagramSocket()
@@ -159,6 +240,7 @@ class MainActivity : AppCompatActivity() {
                 
                 if (tcpSocket!!.isConnected) {
                     Log.d("NEXUS", "Connected to PC!")
+                    updateConnectionUI(true, pcIp)
                     listenForPcMessages()
                 }
             }
@@ -183,10 +265,69 @@ class MainActivity : AppCompatActivity() {
                     lastClipboardText = clipboardContent
                     
                     showFloatingClipboardButton(clipboardContent)
+                    updateActivityList("content_paste", "Teks Clipboard", "Diterima dari PC", "done")
+                } 
+                else if (incomingMsg.startsWith("INFO:")) {
+                    val parts = incomingMsg.split(":")
+                    if (parts.size >= 4) {
+                        val hostname = parts[1]
+                        val battery = parts[2]
+                        val charging = parts[3]
+                        val deviceType = if (parts.size >= 5) parts[4] else "Desktop"
+                        
+                        runOnUiThread {
+                            val tvConnectionStatus = findViewById<TextView>(R.id.tvConnectionStatus)
+                            tvConnectionStatus.text = "Terhubung ke\n$hostname"
+                            tvConnectionStatus.setTextColor(android.graphics.Color.parseColor("#191c1d"))
+                            
+                            val ivDeviceIcon = findViewById<android.widget.ImageView>(R.id.ivDeviceIcon)
+                            ivDeviceIcon.visibility = android.view.View.VISIBLE
+                            if (deviceType == "Laptop") {
+                                ivDeviceIcon.setImageResource(R.drawable.ic_laptop)
+                            } else {
+                                ivDeviceIcon.setImageResource(R.drawable.ic_desktop)
+                            }
+                            
+                            val tvBatteryLevel = findViewById<TextView>(R.id.tvBatteryLevel)
+                            val tvBatteryState = findViewById<TextView>(R.id.tvBatteryState)
+                            val vBatteryFill = findViewById<View>(R.id.vBatteryFill)
+                            
+                            tvBatteryLevel.text = "$battery%"
+                            tvBatteryState.text = if (charging == "1") "Charging" else "On Battery"
+                            
+                            val bLevel = battery.toIntOrNull() ?: 0
+                            val maxWidth = (60 * resources.displayMetrics.density).toInt()
+                            val targetWidth = (maxWidth * bLevel) / 100
+                            
+                            val anim = android.animation.ValueAnimator.ofInt(vBatteryFill.layoutParams.width.coerceAtLeast(0), targetWidth)
+                            anim.addUpdateListener { animation ->
+                                val w = animation.animatedValue as Int
+                                val lp = vBatteryFill.layoutParams
+                                lp.width = w
+                                vBatteryFill.layoutParams = lp
+                            }
+                            anim.duration = 500
+                            anim.start()
+                        }
+                    }
                 }
             }
         } catch (e: Exception) {
             Log.e("NEXUS", "Disconnected: ${e.message}")
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 101 && resultCode == RESULT_OK) {
+            val uri = data?.data
+            if (uri != null) {
+                // Forward the selected file to ShareReceiverActivity to handle the actual transfer
+                val intent = Intent(this, ShareReceiverActivity::class.java)
+                intent.action = Intent.ACTION_SEND
+                intent.putExtra(Intent.EXTRA_STREAM, uri)
+                startActivity(intent)
+            }
         }
     }
 }

@@ -194,6 +194,14 @@ class ShareReceiverActivity : Activity() {
                 out.flush()
                 inputStream.close()
                 runOnUiThread { Toast.makeText(this, "✅ File Berhasil Terkirim!", Toast.LENGTH_SHORT).show() }
+                
+                // Simpan riwayat ke SharedPreferences agar tampil di Dashboard (Aktivitas Terakhir)
+                val prefs = getSharedPreferences("NexusPrefs", Context.MODE_PRIVATE)
+                val filename = getFileMetaData(uri).first
+                prefs.edit()
+                    .putString("LAST_ACT_TITLE", filename)
+                    .putString("LAST_ACT_SUB", "Berhasil disinkronisasi")
+                    .apply()
             }
             dataSocket.close()
         } catch (e: Exception) {
