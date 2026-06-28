@@ -3,6 +3,12 @@
 #include <ws2tcpip.h>
 #include <windows.h>
 #include <string>
+#include <vector>
+
+#include <fstream>
+#include <direct.h>
+#include <chrono>
+#include <iomanip>
 
 #pragma comment(lib, "Ws2_32.lib")
 
@@ -37,11 +43,67 @@ std::string getWindowsClipboard() {
 }
 // ------------------------------------
 
+// Data structure to pass arguments to the thread
+struct FileTransferParams {
+    SOCKET sock;
+    std::string filename;
+    long long filesize;
+};
+
+// Fast streaming in 64KB chunks using native Windows Threads
+DWORD WINAPI receiveFileThread(LPVOID lpParam) {
+    FileTransferParams* params = (FileTransferParams*)lpParam;
+    SOCKET sock = params->sock;
+    std::string filename = params->filename;
+    long long filesize = params->filesize;
+    delete params; // Free memory allocated in main
+
+    _mkdir("NexusFiles");
+    std::string path = "NexusFiles\\" + filename;
+    std::ofstream outfile(path, std::ios::binary);
+    
+    char buffer[65536]; 
+    long long bytesReceivedTotal = 0;
+    
+    std::cout << "\n[FILE] Receiving " << filename << " (" << (filesize / 1024) << " KB)...\n";
+    
+    auto startTime = std::chrono::high_resolution_clock::now();
+    
+    while (bytesReceivedTotal < filesize) {
+        int bytes = recv(sock, buffer, sizeof(buffer), 0);
+        if (bytes > 0) {
+            outfile.write(buffer, bytes);
+            bytesReceivedTotal += bytes;
+        } else {
+            break;
+        }
+    }
+    
+    outfile.close();
+    closesocket(sock);
+    
+    auto endTime = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> elapsed = endTime - startTime;
+    double seconds = elapsed.count();
+    
+    if (bytesReceivedTotal == filesize) {
+        double mbps = 0.0;
+        if (seconds > 0.0001) {
+            mbps = (filesize / (1024.0 * 1024.0)) / seconds;
+        }
+        std::cout << "[FILE] \033[32mSuccess!\033[0m Saved to " << path << "\n";
+        std::cout << "       Time: " << std::fixed << std::setprecision(2) << seconds << " s | Speed: " << mbps << " MB/s\n\n";
+    } else {
+        std::cout << "[FILE] \033[31mTransfer interrupted.\033[0m\n\n";
+    }
+    
+    return 0;
+}
+
 int main() {
     WSADATA wsaData;
     WSAStartup(MAKEWORD(2, 2), &wsaData);
 
-    // Initialize UDP Discovery Socket
     SOCKET udpSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     sockaddr_in udpAddr;
     udpAddr.sin_family = AF_INET;
@@ -49,7 +111,6 @@ int main() {
     udpAddr.sin_port = htons(5051);
     bind(udpSocket, (sockaddr*)&udpAddr, sizeof(udpAddr));
 
-    // Initialize TCP Data Socket
     SOCKET tcpSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     sockaddr_in tcpAddr;
     tcpAddr.sin_family = AF_INET;
@@ -58,23 +119,37 @@ int main() {
     bind(tcpSocket, (sockaddr*)&tcpAddr, sizeof(tcpAddr));
     listen(tcpSocket, SOMAXCONN);
 
-    std::cout << "[SERVER] Waiting for UDP discovery and TCP connections...\n";
+    SOCKET fileListenSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    sockaddr_in fileAddr;
+    fileAddr.sin_family = AF_INET;
+    fileAddr.sin_addr.s_addr = INADDR_ANY;
+    fileAddr.sin_port = htons(5052);
+    bind(fileListenSocket, (sockaddr*)&fileAddr, sizeof(fileAddr));
+    listen(fileListenSocket, SOMAXCONN);
+
+    std::cout << "=================================================\n";
+    std::cout << "          NEXUS PC SERVER IS RUNNING             \n";
+    std::cout << "  Control Port: 5050  |  Data Kargo Port: 5052   \n";
+    std::cout << "=================================================\n";
 
     char buffer[4096];
-    SOCKET activeTcpSocket = INVALID_SOCKET;
+    std::vector<SOCKET> controlSockets;
     std::string lastClipboardText = getWindowsClipboard();
+    
+    std::string expectedFilename = "";
+    long long expectedFilesize = 0;
 
     while (true) {
         fd_set readfds;
         FD_ZERO(&readfds);
         FD_SET(udpSocket, &readfds);
         FD_SET(tcpSocket, &readfds);
+        FD_SET(fileListenSocket, &readfds);
         
-        if (activeTcpSocket != INVALID_SOCKET) {
-            FD_SET(activeTcpSocket, &readfds);
+        for (SOCKET s : controlSockets) {
+            FD_SET(s, &readfds);
         }
 
-        // Set 1 second timeout for clipboard polling
         timeval timeout;
         timeout.tv_sec = 1;
         timeout.tv_usec = 0;
@@ -82,22 +157,23 @@ int main() {
         int activity = select(0, &readfds, NULL, NULL, &timeout);
 
         if (activity == SOCKET_ERROR) {
-            std::cerr << "[ERROR] Select failed.\n";
             break;
         }
 
-        // Poll PC Clipboard every second
-        if (activity == 0 && activeTcpSocket != INVALID_SOCKET) {
+        // Poll Clipboard
+        if (activity == 0 && !controlSockets.empty()) {
             std::string currentClip = getWindowsClipboard();
             if (!currentClip.empty() && currentClip != lastClipboardText) {
                 lastClipboardText = currentClip;
                 std::string packet = "CLIP:" + currentClip;
-                send(activeTcpSocket, packet.c_str(), packet.length(), 0);
+                for (SOCKET s : controlSockets) {
+                    send(s, packet.c_str(), packet.length(), 0);
+                }
                 std::cout << "[CLIPBOARD] Sent to Android: " << currentClip << "\n";
             }
         }
 
-        // Handle UDP Discovery from Android
+        // Handle UDP
         if (FD_ISSET(udpSocket, &readfds)) {
             sockaddr_in clientAddr;
             int clientAddrSize = sizeof(clientAddr);
@@ -106,49 +182,77 @@ int main() {
             if (bytesReceived > 0) {
                 buffer[bytesReceived] = '\0';
                 std::string message(buffer);
-                
                 if (message == "NEXUS_DISCOVER") {
-                    std::cout << "[UDP] Discovery ping from IP: " << inet_ntoa(clientAddr.sin_addr) << "\n";
                     std::string reply = "NEXUS_SERVER_HERE";
                     sendto(udpSocket, reply.c_str(), reply.length(), 0, (sockaddr*)&clientAddr, clientAddrSize);
                 }
             }
         }
 
-        // Handle incoming TCP connections
+        // Handle new Control Connections
         if (FD_ISSET(tcpSocket, &readfds)) {
             SOCKET clientSocket = accept(tcpSocket, NULL, NULL);
-            // Drop old connection if a new session is started (e.g. Android Share intent)
-            if (activeTcpSocket != INVALID_SOCKET) {
-                closesocket(activeTcpSocket);
-            }
-            activeTcpSocket = clientSocket;
-            std::cout << "[TCP] Android connected! Clipboard sync active.\n";
+            controlSockets.push_back(clientSocket);
         }
 
-        // Handle TCP Data from Android
-        if (activeTcpSocket != INVALID_SOCKET && FD_ISSET(activeTcpSocket, &readfds)) {
-            int bytesReceived = recv(activeTcpSocket, buffer, sizeof(buffer) - 1, 0);
-            if (bytesReceived > 0) {
-                buffer[bytesReceived] = '\0';
-                std::string msg(buffer);
+        // Handle new File Data Connections
+        if (FD_ISSET(fileListenSocket, &readfds)) {
+            SOCKET fileSocket = accept(fileListenSocket, NULL, NULL);
+            if (expectedFilesize > 0) {
+                FileTransferParams* params = new FileTransferParams();
+                params->sock = fileSocket;
+                params->filename = expectedFilename;
+                params->filesize = expectedFilesize;
+                CreateThread(NULL, 0, receiveFileThread, params, 0, NULL);
                 
-                if (msg.rfind("CLIP:", 0) == 0) {
-                    std::string content = msg.substr(5);
-                    setWindowsClipboard(content);
-                    lastClipboardText = content; // Prevent looping back
-                    std::cout << "[CLIPBOARD] Received from Android: " << content << "\n";
+                expectedFilename = "";
+                expectedFilesize = 0;
+            } else {
+                closesocket(fileSocket);
+            }
+        }
+
+        // Handle Control Data
+        for (auto it = controlSockets.begin(); it != controlSockets.end(); ) {
+            SOCKET s = *it;
+            if (FD_ISSET(s, &readfds)) {
+                int bytesReceived = recv(s, buffer, sizeof(buffer) - 1, 0);
+                if (bytesReceived > 0) {
+                    buffer[bytesReceived] = '\0';
+                    std::string msg(buffer);
+                    
+                    if (msg.rfind("CLIP:", 0) == 0) {
+                        std::string content = msg.substr(5);
+                        setWindowsClipboard(content);
+                        lastClipboardText = content; 
+                        std::cout << "[CLIPBOARD] Received: " << content << "\n";
+                    } 
+                    else if (msg.rfind("FILE_REQ:", 0) == 0) {
+                        size_t firstColon = msg.find(':');
+                        size_t secondColon = msg.find(':', firstColon + 1);
+                        if (firstColon != std::string::npos && secondColon != std::string::npos) {
+                            expectedFilename = msg.substr(firstColon + 1, secondColon - firstColon - 1);
+                            try {
+                                expectedFilesize = std::stoll(msg.substr(secondColon + 1));
+                                std::string reply = "FILE_ACCEPT";
+                                send(s, reply.c_str(), reply.length(), 0);
+                            } catch (...) {}
+                        }
+                    }
+                    ++it;
+                } else {
+                    closesocket(s);
+                    it = controlSockets.erase(it);
                 }
             } else {
-                std::cout << "[TCP] Android disconnected.\n";
-                closesocket(activeTcpSocket);
-                activeTcpSocket = INVALID_SOCKET;
+                ++it;
             }
         }
     }
 
     closesocket(udpSocket);
-    if (activeTcpSocket != INVALID_SOCKET) closesocket(activeTcpSocket);
+    closesocket(fileListenSocket);
+    closesocket(tcpSocket);
     WSACleanup();
     return 0;
 }

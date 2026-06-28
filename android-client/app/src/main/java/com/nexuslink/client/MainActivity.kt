@@ -24,7 +24,6 @@ class MainActivity : AppCompatActivity() {
 
     private var tcpSocket: Socket? = null
     private var lastClipboardText = ""
-    private var pendingTextToSend: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -34,11 +33,6 @@ class MainActivity : AppCompatActivity() {
         if (!Settings.canDrawOverlays(this)) {
             val intentOverlay = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
             startActivity(intentOverlay)
-        }
-
-        // Handle text shared from other apps
-        if (intent?.action == Intent.ACTION_SEND && intent.type == "text/plain") {
-            pendingTextToSend = intent.getStringExtra(Intent.EXTRA_TEXT)
         }
 
         thread {
@@ -79,7 +73,6 @@ class MainActivity : AppCompatActivity() {
     // --- Floating Bubble for Android 10+ Clipboard Injection ---
     private fun showFloatingClipboardButton(text: String) {
         if (!Settings.canDrawOverlays(this)) {
-            Log.e("NEXUS", "Missing overlay permission.")
             return
         }
 
@@ -102,7 +95,6 @@ class MainActivity : AppCompatActivity() {
             params.gravity = Gravity.CENTER_VERTICAL or Gravity.END
 
             bubble.setOnClickListener {
-                // Launch transparent activity to securely gain focus and inject clipboard
                 val intent = Intent(this, TransparentActivity::class.java)
                 intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                 intent.putExtra("CLIP_TEXT", text)
@@ -115,7 +107,6 @@ class MainActivity : AppCompatActivity() {
 
             windowManager.addView(bubble, params)
 
-            // Auto-click the button after 1 second for visual feedback!
             bubble.postDelayed({
                 if (bubble.parent != null) {
                     bubble.performClick()
@@ -133,7 +124,6 @@ class MainActivity : AppCompatActivity() {
                     val packet = "CLIP:$text"
                     out.write(packet.toByteArray())
                     out.flush()
-                    Log.d("NEXUS", "Sent to PC: $text")
                 }
             } catch (e: Exception) {
                 Log.e("NEXUS", "Failed to send: ${e.message}")
@@ -143,7 +133,6 @@ class MainActivity : AppCompatActivity() {
 
     private fun discoverAndConnectPc() {
         try {
-            // UDP Discovery
             val udpSocket = DatagramSocket()
             udpSocket.broadcast = true
             udpSocket.soTimeout = 10000 
@@ -162,18 +151,14 @@ class MainActivity : AppCompatActivity() {
             udpSocket.close()
 
             if (reply == "NEXUS_SERVER_HERE" && pcIp != null) {
-                // Establish TCP Connection
+                // Cache the IP to allow seamless transparent sharing later!
+                val prefs = getSharedPreferences("NexusPrefs", Context.MODE_PRIVATE)
+                prefs.edit().putString("PC_IP", pcIp).apply()
+
                 tcpSocket = Socket(pcIp, 5050) 
                 
                 if (tcpSocket!!.isConnected) {
                     Log.d("NEXUS", "Connected to PC!")
-                    
-                    if (pendingTextToSend != null) {
-                        sendTextToPc(pendingTextToSend!!)
-                        pendingTextToSend = null 
-                        runOnUiThread { finish() } 
-                    }
-
                     listenForPcMessages()
                 }
             }
