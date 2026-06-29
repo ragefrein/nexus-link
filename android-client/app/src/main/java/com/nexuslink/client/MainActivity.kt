@@ -52,9 +52,9 @@ class MainActivity : AppCompatActivity() {
                 val text = clipboard.primaryClip!!.getItemAt(0).text?.toString()
                 if (text != null) {
                     sendCommandToPc("CLIP:$text")
-                    updateActivityList("content_copy", "Mengirim Teks Clipboard", "Baru saja", "done")
+                    updateActivityList("content_copy", "Sent Clipboard Text", "Just now", "done")
                 } else {
-                    Toast.makeText(this, "Clipboard kosong", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Clipboard is empty", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -187,9 +187,9 @@ class MainActivity : AppCompatActivity() {
         runOnUiThread {
             val tvConnectionStatus = findViewById<TextView>(R.id.tvConnectionStatus)
             if (isConnected) {
-                tvConnectionStatus.text = "Terhubung ke $ip"
+                tvConnectionStatus.text = "Connected to $ip"
             } else {
-                tvConnectionStatus.text = "Mencari PC..."
+                tvConnectionStatus.text = "Searching for PC..."
             }
         }
     }
@@ -300,7 +300,7 @@ class MainActivity : AppCompatActivity() {
                     lastClipboardText = clipboardContent
                     
                     showFloatingClipboardButton(clipboardContent)
-                    updateActivityList("content_paste", "Teks Clipboard", "Diterima dari PC", "done")
+                    updateActivityList("content_paste", "Clipboard Text", "Received from PC", "done")
                 } 
                 else if (incomingMsg.startsWith("INFO:")) {
                     val parts = incomingMsg.split(":")
@@ -314,7 +314,7 @@ class MainActivity : AppCompatActivity() {
                         
                         runOnUiThread {
                             val tvConnectionStatus = findViewById<TextView>(R.id.tvConnectionStatus)
-                            tvConnectionStatus.text = "Terhubung ke\n$hostname"
+                            tvConnectionStatus.text = "Connected to\n$hostname"
                             tvConnectionStatus.setTextColor(android.graphics.Color.parseColor("#191c1d"))
                             
                             val ivDeviceIcon = findViewById<android.widget.ImageView>(R.id.ivDeviceIcon)
@@ -374,7 +374,7 @@ class MainActivity : AppCompatActivity() {
                                     val file = java.io.File(downloadsDir, name)
                                     val out = java.io.BufferedOutputStream(java.io.FileOutputStream(file), 1024 * 1024)
                                     
-                                    runOnUiThread { Toast.makeText(this@MainActivity, "📥 Mengunduh $name...", Toast.LENGTH_SHORT).show() }
+                                    runOnUiThread { Toast.makeText(this@MainActivity, "📥 Downloading $name...", Toast.LENGTH_SHORT).show() }
                                     
                                     val buffer = ByteArray(65536)
                                     var bytesRead: Int
@@ -390,12 +390,12 @@ class MainActivity : AppCompatActivity() {
                                     downloadSocket.close()
                                     
                                     runOnUiThread { 
-                                        Toast.makeText(this@MainActivity, "✅ File diterima: $name", Toast.LENGTH_SHORT).show()
-                                        updateActivityList("image", name, "Diterima dari PC", "done")
+                                        Toast.makeText(this@MainActivity, "✅ File received: $name", Toast.LENGTH_SHORT).show()
+                                        updateActivityList("image", name, "Received from PC", "done")
                                     }
                                 }
                             } catch (e: Exception) {
-                                runOnUiThread { Toast.makeText(this@MainActivity, "❌ Gagal mengunduh file", Toast.LENGTH_SHORT).show() }
+                                runOnUiThread { Toast.makeText(this@MainActivity, "❌ Failed to download file", Toast.LENGTH_SHORT).show() }
                             }
                         }
                     }

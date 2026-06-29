@@ -112,12 +112,12 @@ class ShareReceiverActivity : Activity() {
                     out.write(packet.toByteArray())
                     out.flush()
                     socket.close()
-                    runOnUiThread { Toast.makeText(this@ShareReceiverActivity, "✅ Teks Terkirim ke PC!", Toast.LENGTH_SHORT).show() }
+                    runOnUiThread { Toast.makeText(this@ShareReceiverActivity, "✅ Text sent to PC!", Toast.LENGTH_SHORT).show() }
                 } catch (e: Exception) {
-                    runOnUiThread { Toast.makeText(this@ShareReceiverActivity, "❌ Gagal mengirim teks", Toast.LENGTH_SHORT).show() }
+                    runOnUiThread { Toast.makeText(this@ShareReceiverActivity, "❌ Failed to send text", Toast.LENGTH_SHORT).show() }
                 }
             } else {
-                runOnUiThread { Toast.makeText(this@ShareReceiverActivity, "❌ PC Nexus tidak ditemukan", Toast.LENGTH_SHORT).show() }
+                runOnUiThread { Toast.makeText(this@ShareReceiverActivity, "❌ Nexus PC not found", Toast.LENGTH_SHORT).show() }
             }
             runOnUiThread { finish() }
         }
@@ -148,25 +148,25 @@ class ShareReceiverActivity : Activity() {
                         } else {
                             controlSocket.close()
                             runOnUiThread { 
-                                Toast.makeText(this@ShareReceiverActivity, "❌ PC menolak file", Toast.LENGTH_SHORT).show() 
+                                Toast.makeText(this@ShareReceiverActivity, "❌ PC rejected file", Toast.LENGTH_SHORT).show() 
                                 finish()
                             }
                         }
                     } else {
                         runOnUiThread { 
-                            Toast.makeText(this@ShareReceiverActivity, "❌ File tidak valid", Toast.LENGTH_SHORT).show() 
+                            Toast.makeText(this@ShareReceiverActivity, "❌ Invalid file", Toast.LENGTH_SHORT).show() 
                             finish()
                         }
                     }
                 } catch (e: Exception) {
                     runOnUiThread { 
-                        Toast.makeText(this@ShareReceiverActivity, "❌ Gagal memulai transfer", Toast.LENGTH_SHORT).show() 
+                        Toast.makeText(this@ShareReceiverActivity, "❌ Failed to start transfer", Toast.LENGTH_SHORT).show() 
                         finish()
                     }
                 }
             } else {
                 runOnUiThread { 
-                    Toast.makeText(this@ShareReceiverActivity, "❌ PC Nexus tidak ditemukan", Toast.LENGTH_SHORT).show() 
+                    Toast.makeText(this@ShareReceiverActivity, "❌ Nexus PC not found", Toast.LENGTH_SHORT).show() 
                     finish()
                 }
             }
@@ -183,7 +183,7 @@ class ShareReceiverActivity : Activity() {
             
             if (baseInput != null) {
                 val inputStream = java.io.BufferedInputStream(baseInput, 1024 * 1024)
-                runOnUiThread { Toast.makeText(this, "🚀 Mengirim File ke PC...", Toast.LENGTH_SHORT).show() }
+                runOnUiThread { Toast.makeText(this, "🚀 Sending file to PC...", Toast.LENGTH_SHORT).show() }
                 
                 val buffer = ByteArray(65536) 
                 var bytesRead: Int
@@ -193,19 +193,19 @@ class ShareReceiverActivity : Activity() {
                 }
                 out.flush()
                 inputStream.close()
-                runOnUiThread { Toast.makeText(this, "✅ File Berhasil Terkirim!", Toast.LENGTH_SHORT).show() }
+                runOnUiThread { Toast.makeText(this, "✅ File successfully sent!", Toast.LENGTH_SHORT).show() }
                 
                 // Simpan riwayat ke SharedPreferences agar tampil di Dashboard (Aktivitas Terakhir)
                 val prefs = getSharedPreferences("NexusPrefs", Context.MODE_PRIVATE)
                 val filename = getFileMetaData(uri).first
                 prefs.edit()
                     .putString("LAST_ACT_TITLE", filename)
-                    .putString("LAST_ACT_SUB", "Berhasil disinkronisasi")
+                    .putString("LAST_ACT_SUB", "Successfully synchronized")
                     .apply()
             }
             dataSocket.close()
         } catch (e: Exception) {
-            runOnUiThread { Toast.makeText(this, "❌ Gagal mengirim file", Toast.LENGTH_SHORT).show() }
+            runOnUiThread { Toast.makeText(this, "❌ Failed to send file", Toast.LENGTH_SHORT).show() }
         }
         runOnUiThread { finish() }
     }
