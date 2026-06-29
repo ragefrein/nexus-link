@@ -270,8 +270,8 @@
                                         <materialDesign:PackIcon Kind="ImageMultipleOutline" Width="32" Height="32" Foreground="#00459A"/>
                                     </Border>
                                     <StackPanel Margin="16,0,0,0" VerticalAlignment="Center">
-                                        <TextBlock Text="Open Gallery" FontSize="18" FontWeight="SemiBold" Foreground="#191C1D"/>
-                                        <TextBlock Text="Browse and sync photos directly" FontSize="14" Foreground="#424753" Margin="0,4,0,0"/>
+                                        <TextBlock Text="Browse and Sync File" FontSize="18" FontWeight="SemiBold" Foreground="#191C1D"/>
+                                        <TextBlock Text="Browse and send files to connected phone" FontSize="14" Foreground="#424753" Margin="0,4,0,0"/>
                                     </StackPanel>
                                 </StackPanel>
                             </Border>
