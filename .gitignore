@@ -28,6 +28,16 @@
 /pc-server/out.txt
 
 # ========================
+# PC SERVER (WPF / .NET)
+# ========================
+/pc-server-wpf/bin/
+/pc-server-wpf/obj/
+/pc-server-wpf/received_files/
+/pc-server-wpf/.vs/
+/pc-server-wpf/*.user
+/pc-server-wpf/*.suo
+
+# ========================
 # UMUM (OS & Editor)
 # ========================
 .vscode/

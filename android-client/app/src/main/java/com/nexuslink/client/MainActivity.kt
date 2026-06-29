@@ -18,6 +18,9 @@ import android.widget.TextView
 import android.widget.Toast
 import android.widget.ProgressBar
 import androidx.appcompat.app.AppCompatActivity
+import android.os.Build
+import android.content.IntentFilter
+import android.os.BatteryManager
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
@@ -48,7 +51,7 @@ class MainActivity : AppCompatActivity() {
             if (clipboard.hasPrimaryClip() && clipboard.primaryClip != null) {
                 val text = clipboard.primaryClip!!.getItemAt(0).text?.toString()
                 if (text != null) {
-                    sendTextToPc(text)
+                    sendCommandToPc("CLIP:$text")
                     updateActivityList("content_copy", "Mengirim Teks Clipboard", "Baru saja", "done")
                 } else {
                     Toast.makeText(this, "Clipboard kosong", Toast.LENGTH_SHORT).show()
@@ -64,6 +67,10 @@ class MainActivity : AppCompatActivity() {
 
         thread {
             discoverAndConnectPc()
+        }
+        
+        thread {
+            startSystemStatsMonitor()
         }
 
         // Load recent activity from SharedPreferences
@@ -82,7 +89,7 @@ class MainActivity : AppCompatActivity() {
                 val text = clip.getItemAt(0).text?.toString()
                 if (text != null && text != lastClipboardText) {
                     lastClipboardText = text 
-                    sendTextToPc(text)
+                    sendCommandToPc("CLIP:$text")
                 }
             }
         }
@@ -109,7 +116,7 @@ class MainActivity : AppCompatActivity() {
                     val text = clip.getItemAt(0).text?.toString()
                     if (text != null && text != lastClipboardText) {
                         lastClipboardText = text
-                        sendTextToPc(text)
+                        sendCommandToPc("CLIP:$text")
                     }
                 }
             }
@@ -162,12 +169,11 @@ class MainActivity : AppCompatActivity() {
     }
     // -----------------------------------------------------------
 
-    private fun sendTextToPc(text: String) {
+    private fun sendCommandToPc(packet: String) {
         thread {
             try {
                 if (tcpSocket?.isConnected == true) {
                     val out = tcpSocket!!.getOutputStream()
-                    val packet = "CLIP:$text"
                     out.write(packet.toByteArray())
                     out.flush()
                 }
@@ -241,11 +247,40 @@ class MainActivity : AppCompatActivity() {
                 if (tcpSocket!!.isConnected) {
                     Log.d("NEXUS", "Connected to PC!")
                     updateConnectionUI(true, pcIp)
+                    startInfoSender()
                     listenForPcMessages()
                 }
             }
         } catch (e: Exception) {
             e.printStackTrace()
+        }
+    }
+    
+    private fun startInfoSender() {
+        thread {
+            try {
+                while (tcpSocket?.isConnected == true) {
+                    val batteryIntent = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+                    val level = batteryIntent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: 100
+                    val scale = batteryIntent?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: 100
+                    val batteryPct = (level * 100) / scale.coerceAtLeast(1)
+                    val status = batteryIntent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+                    val isCharging = if (status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL) "1" else "0"
+                    
+                    val deviceName = Build.MODEL
+                    val infoPacket = "INFO:$deviceName:$batteryPct:$isCharging:Smartphone\n"
+                    
+                    try {
+                        val out = tcpSocket!!.getOutputStream()
+                        out.write(infoPacket.toByteArray())
+                        out.flush()
+                    } catch (e: Exception) {}
+                    
+                    Thread.sleep(5000)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 
@@ -274,6 +309,8 @@ class MainActivity : AppCompatActivity() {
                         val battery = parts[2]
                         val charging = parts[3]
                         val deviceType = if (parts.size >= 5) parts[4] else "Desktop"
+                        val storageInfo = if (parts.size >= 6) parts[5] else "-- Free"
+                        val syncSpeed = if (parts.size >= 7) parts[6] else "0 KB/s"
                         
                         runOnUiThread {
                             val tvConnectionStatus = findViewById<TextView>(R.id.tvConnectionStatus)
@@ -287,6 +324,12 @@ class MainActivity : AppCompatActivity() {
                             } else {
                                 ivDeviceIcon.setImageResource(R.drawable.ic_desktop)
                             }
+                            
+                            val tvStorageInfo = findViewById<TextView>(R.id.tvStorageInfo)
+                            tvStorageInfo?.text = storageInfo
+                            
+                            val tvSyncSpeed = findViewById<TextView>(R.id.tvSyncSpeed)
+                            tvSyncSpeed?.text = syncSpeed
                             
                             val tvBatteryLevel = findViewById<TextView>(R.id.tvBatteryLevel)
                             val tvBatteryState = findViewById<TextView>(R.id.tvBatteryState)
@@ -311,6 +354,49 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
                 }
+                else if (incomingMsg.startsWith("FILE_SEND:")) {
+                    val parts = incomingMsg.split(":")
+                    if (parts.size >= 3) {
+                        val name = parts[1]
+                        val size = parts[2].toLongOrNull() ?: 0L
+                        
+                        thread {
+                            try {
+                                val ip = tcpSocket?.inetAddress?.hostAddress
+                                if (ip != null) {
+                                    val downloadSocket = Socket(ip, 5053)
+                                    val input = java.io.BufferedInputStream(downloadSocket.getInputStream(), 1024 * 1024)
+                                    
+                                    val downloadsDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+                                    val file = java.io.File(downloadsDir, name)
+                                    val out = java.io.BufferedOutputStream(java.io.FileOutputStream(file), 1024 * 1024)
+                                    
+                                    runOnUiThread { Toast.makeText(this@MainActivity, "📥 Mengunduh $name...", Toast.LENGTH_SHORT).show() }
+                                    
+                                    val buffer = ByteArray(65536)
+                                    var bytesRead: Int
+                                    var totalRead = 0L
+                                    while (input.read(buffer).also { bytesRead = it } != -1) {
+                                        out.write(buffer, 0, bytesRead)
+                                        totalRead += bytesRead
+                                        if (totalRead >= size) break
+                                    }
+                                    out.flush()
+                                    out.close()
+                                    input.close()
+                                    downloadSocket.close()
+                                    
+                                    runOnUiThread { 
+                                        Toast.makeText(this@MainActivity, "✅ File diterima: $name", Toast.LENGTH_SHORT).show()
+                                        updateActivityList("image", name, "Diterima dari PC", "done")
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                runOnUiThread { Toast.makeText(this@MainActivity, "❌ Gagal mengunduh file", Toast.LENGTH_SHORT).show() }
+                            }
+                        }
+                    }
+                }
             }
         } catch (e: Exception) {
             Log.e("NEXUS", "Disconnected: ${e.message}")
@@ -327,6 +413,61 @@ class MainActivity : AppCompatActivity() {
                 intent.action = Intent.ACTION_SEND
                 intent.putExtra(Intent.EXTRA_STREAM, uri)
                 startActivity(intent)
+            }
+        }
+    }
+
+    private fun startSystemStatsMonitor() {
+        var lastTxBytes = android.net.TrafficStats.getTotalTxBytes()
+        var lastRxBytes = android.net.TrafficStats.getTotalRxBytes()
+        var firstRun = true
+        
+        while (true) {
+            try {
+                Thread.sleep(1000)
+                
+                // Network Speed
+                val currentTx = android.net.TrafficStats.getTotalTxBytes()
+                val currentRx = android.net.TrafficStats.getTotalRxBytes()
+                val diffTx = currentTx - lastTxBytes
+                val diffRx = currentRx - lastRxBytes
+                lastTxBytes = currentTx
+                lastRxBytes = currentRx
+                
+                var speedKbps = (diffTx + diffRx) / 1024.0
+                if (firstRun) { speedKbps = 0.0; firstRun = false; }
+                val speedText = if (speedKbps > 1024) String.format("%.1f MB/s", speedKbps / 1024.0) else String.format("%.0f KB/s", speedKbps)
+                
+                // Storage
+                val path = android.os.Environment.getDataDirectory()
+                val stat = android.os.StatFs(path.path)
+                val blockSize = stat.blockSizeLong
+                val totalBlocks = stat.blockCountLong
+                val availableBlocks = stat.availableBlocksLong
+                
+                val totalSize = totalBlocks * blockSize
+                val availableSize = availableBlocks * blockSize
+                val freeGB = availableSize / (1024.0 * 1024.0 * 1024.0)
+                val totalGB = totalSize / (1024.0 * 1024.0 * 1024.0)
+                val percentFree = if (totalGB > 0) (freeGB / totalGB) * 100 else 0.0
+                val percentUsed = 100.0 - percentFree
+                
+                val storageText = String.format("%.0f%% Free (%.1f GB)", percentFree, freeGB)
+                val storagePercent = percentUsed.toInt()
+                
+                runOnUiThread {
+                    val tvSyncSpeed = findViewById<TextView>(R.id.tvSyncSpeed)
+                    tvSyncSpeed?.text = speedText
+                    // DO NOT update tvStorageInfo here because user said Android UI uses PC's storage? Wait:
+                    // "sedangkan di pc utuk storage nya itu ambil storage hp saya" -> Android UI storage uses PC's?
+                    // Actually, let's keep Android UI storage as PC's storage. It was already parsed from INFO.
+                }
+                
+                // Send Phone STATS to PC
+                sendCommandToPc("STATS:$storageText:$storagePercent:$speedText")
+                
+            } catch (e: Exception) {
+                // Ignore
             }
         }
     }
