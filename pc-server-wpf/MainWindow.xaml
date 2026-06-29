@@ -233,7 +233,21 @@
                                 
                                 <Grid Width="140" Height="140" HorizontalAlignment="Center" Margin="0,16,0,16">
                                     <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                                        <materialDesign:PackIcon x:Name="IconBattery" Kind="BatteryUnknown" Foreground="#00459A" Width="80" Height="80" HorizontalAlignment="Center"/>
+                                        <!-- Custom Battery Icon (XAML) -->
+                                        <Grid Width="68" Height="32" HorizontalAlignment="Center" Margin="0,0,0,12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="4"/>
+                                            </Grid.ColumnDefinitions>
+                                            
+                                            <!-- Battery Body -->
+                                            <Border Grid.Column="0" BorderBrush="#424753" BorderThickness="2" CornerRadius="4" Padding="2" Background="Transparent">
+                                                <Border x:Name="BatteryFill" Background="#00459A" CornerRadius="2" HorizontalAlignment="Left" Width="0"/>
+                                            </Border>
+                                            
+                                            <!-- Battery Terminal -->
+                                            <Border Grid.Column="1" Background="#424753" CornerRadius="0,2,2,0" Height="12" Margin="0,10,0,10"/>
+                                        </Grid>
                                         <TextBlock x:Name="TxtBatteryLvl" Text="--" FontSize="32" FontWeight="Bold" Foreground="#191C1D" HorizontalAlignment="Center" Margin="0,4,0,0"/>
                                     </StackPanel>
                                 </Grid>

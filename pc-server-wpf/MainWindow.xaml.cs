@@ -211,31 +211,17 @@ namespace SyncLinkServer
                         if (int.TryParse(batteryStr, out int batLvl))
                         {
                             TxtBatteryLvl.Text = $"{batLvl}%";
+                            BatteryFill.Width = 56.0 * (batLvl / 100.0);
                             
-                            // Set battery icon dynamically
-                            if (isCharging)
-                            {
-                                if (batLvl >= 95) IconBattery.Kind = MaterialDesignThemes.Wpf.PackIconKind.BatteryCharging100;
-                                else if (batLvl >= 85) IconBattery.Kind = MaterialDesignThemes.Wpf.PackIconKind.BatteryCharging90;
-                                else if (batLvl >= 75) IconBattery.Kind = MaterialDesignThemes.Wpf.PackIconKind.BatteryCharging80;
-                                else if (batLvl >= 55) IconBattery.Kind = MaterialDesignThemes.Wpf.PackIconKind.BatteryCharging60;
-                                else if (batLvl >= 35) IconBattery.Kind = MaterialDesignThemes.Wpf.PackIconKind.BatteryCharging40;
-                                else if (batLvl >= 15) IconBattery.Kind = MaterialDesignThemes.Wpf.PackIconKind.BatteryCharging20;
-                                else IconBattery.Kind = MaterialDesignThemes.Wpf.PackIconKind.BatteryChargingOutline;
+                            // Set battery color dynamically
+                            if (batLvl <= 20) {
+                                BatteryFill.Background = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#BA1A1A")); // Red for low battery
                             }
-                            else
-                            {
-                                if (batLvl >= 95) IconBattery.Kind = MaterialDesignThemes.Wpf.PackIconKind.Battery;
-                                else if (batLvl >= 85) IconBattery.Kind = MaterialDesignThemes.Wpf.PackIconKind.Battery90;
-                                else if (batLvl >= 75) IconBattery.Kind = MaterialDesignThemes.Wpf.PackIconKind.Battery80;
-                                else if (batLvl >= 65) IconBattery.Kind = MaterialDesignThemes.Wpf.PackIconKind.Battery70;
-                                else if (batLvl >= 55) IconBattery.Kind = MaterialDesignThemes.Wpf.PackIconKind.Battery60;
-                                else if (batLvl >= 45) IconBattery.Kind = MaterialDesignThemes.Wpf.PackIconKind.Battery50;
-                                else if (batLvl >= 35) IconBattery.Kind = MaterialDesignThemes.Wpf.PackIconKind.Battery40;
-                                else if (batLvl >= 25) IconBattery.Kind = MaterialDesignThemes.Wpf.PackIconKind.Battery30;
-                                else if (batLvl >= 15) IconBattery.Kind = MaterialDesignThemes.Wpf.PackIconKind.Battery20;
-                                else if (batLvl >= 5) IconBattery.Kind = MaterialDesignThemes.Wpf.PackIconKind.Battery10;
-                                else IconBattery.Kind = MaterialDesignThemes.Wpf.PackIconKind.BatteryOutline;
+                            else if (isCharging) {
+                                BatteryFill.Background = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#386A20")); // Green for charging
+                            }
+                            else {
+                                BatteryFill.Background = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#00459A")); // Blue for normal
                             }
                         }
                         
