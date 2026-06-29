@@ -213,16 +213,8 @@ namespace SyncLinkServer
                             TxtBatteryLvl.Text = $"{batLvl}%";
                             BatteryFill.Width = 56.0 * (batLvl / 100.0);
                             
-                            // Set battery color dynamically
-                            if (batLvl <= 20) {
-                                BatteryFill.Background = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#BA1A1A")); // Red for low battery
-                            }
-                            else if (isCharging) {
-                                BatteryFill.Background = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#386A20")); // Green for charging
-                            }
-                            else {
-                                BatteryFill.Background = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#00459A")); // Blue for normal
-                            }
+                            // Set battery color (always blue)
+                            BatteryFill.Background = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#00459A"));
                         }
                         
                         TxtBatteryState.Text = isCharging ? "Charging via USB/AC" : "On Battery";

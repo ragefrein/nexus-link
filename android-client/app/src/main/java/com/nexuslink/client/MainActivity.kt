@@ -352,13 +352,8 @@ class MainActivity : AppCompatActivity() {
                             anim.duration = 500
                             anim.start()
 
-                            // Set color dynamically
-                            val batteryColor = when {
-                                bLevel <= 20 -> android.graphics.Color.parseColor("#BA1A1A")
-                                charging == "1" -> android.graphics.Color.parseColor("#386A20")
-                                else -> android.graphics.Color.parseColor("#00459A")
-                            }
-                            vBatteryFill.background?.setTint(batteryColor)
+                            // Set color (always blue)
+                            vBatteryFill.background?.setTint(android.graphics.Color.parseColor("#00459A"))
                         }
                     }
                 }
