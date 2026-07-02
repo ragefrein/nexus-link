@@ -66,7 +66,15 @@ class MainActivity : AppCompatActivity() {
         }
 
         thread {
-            discoverAndConnectPc()
+            while (true) {
+                discoverAndConnectPc()
+                
+                try { tcpSocket?.close() } catch(e: Exception) {}
+                tcpSocket = null
+                updateConnectionUI(false, "")
+                
+                Thread.sleep(3000)
+            }
         }
         
         thread {
@@ -254,6 +262,7 @@ class MainActivity : AppCompatActivity() {
                 prefs.edit().putString("PC_IP", pcIp).apply()
 
                 tcpSocket = Socket(pcIp, 5050) 
+                tcpSocket!!.soTimeout = 15000 // Detect network drops
                 
                 if (tcpSocket!!.isConnected) {
                     Log.d("NEXUS", "Connected to PC!")
@@ -408,7 +417,8 @@ class MainActivity : AppCompatActivity() {
                                     
                                     runOnUiThread { Toast.makeText(this@MainActivity, "📥 Downloading $name...", Toast.LENGTH_SHORT).show() }
                                     
-                                    val buffer = ByteArray(65536)
+                                    downloadSocket.receiveBufferSize = 2 * 1024 * 1024
+                                    val buffer = ByteArray(1024 * 1024)
                                     var bytesRead: Int
                                     var totalRead = 0L
                                     while (input.read(buffer).also { bytesRead = it } != -1) {

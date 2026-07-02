@@ -185,7 +185,8 @@ class ShareReceiverActivity : Activity() {
                 val inputStream = java.io.BufferedInputStream(baseInput, 1024 * 1024)
                 runOnUiThread { Toast.makeText(this, "🚀 Sending file to PC...", Toast.LENGTH_SHORT).show() }
                 
-                val buffer = ByteArray(65536) 
+                dataSocket.sendBufferSize = 2 * 1024 * 1024
+                val buffer = ByteArray(1024 * 1024) 
                 var bytesRead: Int
                 
                 while (inputStream.read(buffer).also { bytesRead = it } != -1) {

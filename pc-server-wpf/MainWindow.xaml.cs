@@ -271,6 +271,7 @@ namespace SyncLinkServer
                 try
                 {
                     var fileClient = await _fileListener.AcceptTcpClientAsync();
+                    fileClient.ReceiveBufferSize = 2 * 1024 * 1024;
                     if (!string.IsNullOrEmpty(_expectedFilename) && _expectedFilesize > 0)
                     {
                         string targetDir = Path.Combine(Environment.CurrentDirectory, "received_files");
@@ -286,7 +287,7 @@ namespace SyncLinkServer
                                 using (var ns = fileClient.GetStream())
                                 using (var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write))
                                 {
-                                    byte[] buffer = new byte[65536];
+                                    byte[] buffer = new byte[1024 * 1024];
                                     long totalRead = 0;
                                     while (totalRead < expectedSize)
                                     {
@@ -322,6 +323,7 @@ namespace SyncLinkServer
                 try
                 {
                     var fileClient = await _fileSendListener.AcceptTcpClientAsync();
+                    fileClient.SendBufferSize = 2 * 1024 * 1024;
                     if (!string.IsNullOrEmpty(_fileToSend))
                     {
                         string file = _fileToSend;
@@ -332,7 +334,7 @@ namespace SyncLinkServer
                                 using (var ns = fileClient.GetStream())
                                 using (var fs = new FileStream(file, FileMode.Open, FileAccess.Read))
                                 {
-                                    await fs.CopyToAsync(ns);
+                                    await fs.CopyToAsync(ns, 1024 * 1024);
                                 }
                                 Dispatcher.Invoke(() => AddLog("File", $"Sent: {Path.GetFileName(file)}"));
                             }
@@ -505,6 +507,98 @@ namespace SyncLinkServer
                     }
                 }
             }
+        }
+
+        private void BtnMirrorScreen_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            string scrcpyPath = Path.Combine(Environment.CurrentDirectory, "scrcpy", "scrcpy-win64-v2.4", "scrcpy.exe");
+            string adbPath = Path.Combine(Environment.CurrentDirectory, "scrcpy", "scrcpy-win64-v2.4", "adb.exe");
+            
+            if (!File.Exists(scrcpyPath))
+            {
+                scrcpyPath = Path.Combine(Environment.CurrentDirectory, "scrcpy", "scrcpy.exe");
+                adbPath = Path.Combine(Environment.CurrentDirectory, "scrcpy", "adb.exe");
+            }
+            
+            if (!File.Exists(scrcpyPath))
+            {
+                System.Windows.MessageBox.Show("Modul Screen Mirroring sedang diunduh. Harap tunggu beberapa saat lalu coba lagi.", "NexusLink", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                return;
+            }
+
+            string targetIp = "";
+            lock (_connectedClients)
+            {
+                if (_connectedClients.Count > 0)
+                {
+                    targetIp = ((IPEndPoint)_connectedClients[0].Client.RemoteEndPoint).Address.ToString();
+                }
+            }
+
+            Task.Run(() => {
+                string adbSerial = "";
+                if (!string.IsNullOrEmpty(targetIp))
+                {
+                    try {
+                        Dispatcher.Invoke(() => AddLog("Mirror", $"Connecting ADB to {targetIp}..."));
+                        var adbProc = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo {
+                            FileName = adbPath,
+                            Arguments = $"connect {targetIp}:5555",
+                            UseShellExecute = false,
+                            CreateNoWindow = true
+                        });
+                        adbProc.WaitForExit();
+                        
+                        // Find the correct serial for this IP
+                        var adbDevices = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo {
+                            FileName = adbPath,
+                            Arguments = "devices",
+                            UseShellExecute = false,
+                            RedirectStandardOutput = true,
+                            CreateNoWindow = true
+                        });
+                        string output = adbDevices.StandardOutput.ReadToEnd();
+                        adbDevices.WaitForExit();
+                        
+                        string usbSerial = "";
+                        string tcpSerial = "";
+                        foreach (string line in output.Split('\n'))
+                        {
+                            if (line.Contains("device") && !line.Contains("devices") && !line.Contains("emulator"))
+                            {
+                                string serial = line.Split('\t')[0].Trim();
+                                if (serial.Contains("."))
+                                {
+                                    if (serial.Contains(targetIp)) tcpSerial = serial;
+                                }
+                                else
+                                {
+                                    usbSerial = serial;
+                                }
+                            }
+                        }
+                        
+                        // Prioritize USB if plugged in, otherwise fallback to Wi-Fi
+                        if (!string.IsNullOrEmpty(usbSerial))
+                            adbSerial = usbSerial;
+                        else if (!string.IsNullOrEmpty(tcpSerial))
+                            adbSerial = tcpSerial;
+                        
+                    } catch { }
+                }
+
+                try {
+                    Dispatcher.Invoke(() => AddLog("Mirror", "Starting Screen Mirror..."));
+                    string serialArg = string.IsNullOrEmpty(adbSerial) ? "" : $"-s {adbSerial} ";
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo {
+                        FileName = "cmd.exe",
+                        Arguments = $"/c \"\"{scrcpyPath}\" {serialArg}--turn-screen-off --stay-awake --keyboard=uhid --mouse=uhid --video-bit-rate 6M --max-size 1280 --max-fps 60 || pause\"",
+                        UseShellExecute = true
+                    });
+                } catch (Exception ex) {
+                    Dispatcher.Invoke(() => System.Windows.MessageBox.Show($"Gagal membuka screen mirror: {ex.Message}", "Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error));
+                }
+            });
         }
     }
 }
