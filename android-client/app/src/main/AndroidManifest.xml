@@ -18,6 +18,8 @@
             </intent-filter>
         </activity>
 
+        <activity android:name=".SettingsActivity" />
+
         <!-- Invisible Activity to bypass background clipboard restrictions -->
         <activity android:name=".TransparentActivity"
             android:theme="@android:style/Theme.Translucent.NoTitleBar"

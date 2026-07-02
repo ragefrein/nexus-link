@@ -93,6 +93,17 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+
+        val bottomNav = findViewById<com.google.android.material.bottomnavigation.BottomNavigationView>(R.id.bottomNav)
+        bottomNav.setOnItemSelectedListener { item ->
+            when (item.itemId) {
+                R.id.nav_settings -> {
+                    startActivity(Intent(this, SettingsActivity::class.java))
+                    true
+                }
+                else -> true
+            }
+        }
     }
 
     override fun onResume() {
@@ -370,9 +381,30 @@ class MainActivity : AppCompatActivity() {
                                     val downloadSocket = Socket(ip, 5053)
                                     val input = java.io.BufferedInputStream(downloadSocket.getInputStream(), 1024 * 1024)
                                     
-                                    val downloadsDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
-                                    val file = java.io.File(downloadsDir, name)
-                                    val out = java.io.BufferedOutputStream(java.io.FileOutputStream(file), 1024 * 1024)
+                                    val prefs = getSharedPreferences("NexusPrefs", Context.MODE_PRIVATE)
+                                    val treeUriStr = prefs.getString("DOWNLOAD_DIR_URI", null)
+                                    
+                                    val outStream: java.io.OutputStream
+                                    if (treeUriStr != null) {
+                                        val treeUri = android.net.Uri.parse(treeUriStr)
+                                        val pickedDir = androidx.documentfile.provider.DocumentFile.fromTreeUri(this@MainActivity, treeUri)
+                                        var newFile = pickedDir?.findFile(name)
+                                        if (newFile == null) {
+                                            newFile = pickedDir?.createFile("*/*", name)
+                                        }
+                                        if (newFile != null) {
+                                            outStream = contentResolver.openOutputStream(newFile.uri) ?: throw java.lang.Exception("Cannot open stream")
+                                        } else {
+                                            val downloadsDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+                                            val file = java.io.File(downloadsDir, name)
+                                            outStream = java.io.FileOutputStream(file)
+                                        }
+                                    } else {
+                                        val downloadsDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+                                        val file = java.io.File(downloadsDir, name)
+                                        outStream = java.io.FileOutputStream(file)
+                                    }
+                                    val out = java.io.BufferedOutputStream(outStream, 1024 * 1024)
                                     
                                     runOnUiThread { Toast.makeText(this@MainActivity, "📥 Downloading $name...", Toast.LENGTH_SHORT).show() }
                                     

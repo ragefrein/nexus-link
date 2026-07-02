@@ -60,16 +60,7 @@
                     <TextBlock Text="NexusLink Desktop" FontSize="18" FontWeight="Bold" Foreground="#00459A" VerticalAlignment="Center"/>
                 </StackPanel>
 
-                <!-- User Profile -->
-                <Border Grid.Row="1" Background="#E1E3E4" CornerRadius="8" Margin="16,0,16,16" Padding="12">
-                    <StackPanel Orientation="Horizontal">
-                        <Ellipse Width="40" Height="40" Fill="#00459A" />
-                        <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
-                            <TextBlock Text="User Profile" FontWeight="Medium" FontSize="14" Foreground="#191C1D"/>
-                            <TextBlock Text="v2.4.0 - Connected" FontSize="12" Foreground="#424753"/>
-                        </StackPanel>
-                    </StackPanel>
-                </Border>
+
 
                 <!-- Navigation -->
                 <StackPanel Grid.Row="2" Margin="0,8,0,0">
@@ -106,21 +97,7 @@
                     </Button>
                 </StackPanel>
 
-                <!-- Bottom Links -->
-                <StackPanel Grid.Row="3" Margin="0,0,0,24">
-                    <Button Style="{StaticResource SidebarButtonStyle}">
-                        <StackPanel Orientation="Horizontal">
-                            <materialDesign:PackIcon Kind="HelpCircleOutline" Width="20" Height="20" Margin="0,0,12,0" VerticalAlignment="Center"/>
-                            <TextBlock Text="Help" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Button>
-                    <Button Style="{StaticResource SidebarButtonStyle}">
-                        <StackPanel Orientation="Horizontal">
-                            <materialDesign:PackIcon Kind="Logout" Width="20" Height="20" Margin="0,0,12,0" VerticalAlignment="Center"/>
-                            <TextBlock Text="Sign Out" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Button>
-                </StackPanel>
+
             </Grid>
         </Border>
 
@@ -136,19 +113,7 @@
                 <Grid Margin="24,0">
                     <TextBlock Text="NexusLink" FontSize="20" FontWeight="Black" Foreground="#00459A" VerticalAlignment="Center" HorizontalAlignment="Left"/>
                     
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
 
-                        <Button Margin="4,0" Foreground="#424753" Background="Transparent" BorderThickness="0">
-                            <materialDesign:PackIcon Kind="Sync" />
-                        </Button>
-                        <Button Margin="4,0" Foreground="#424753" Background="Transparent" BorderThickness="0">
-                            <materialDesign:PackIcon Kind="Battery" />
-                        </Button>
-                        <Button Margin="4,0" Foreground="#424753" Background="Transparent" BorderThickness="0">
-                            <materialDesign:PackIcon Kind="SignalCellular3" />
-                        </Button>
-                        <Ellipse Width="32" Height="32" Fill="#00459A" Margin="12,0,0,0"/>
-                    </StackPanel>
                 </Grid>
             </Border>
 
