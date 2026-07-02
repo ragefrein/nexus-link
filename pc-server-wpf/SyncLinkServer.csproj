@@ -13,4 +13,8 @@
     <PackageReference Include="MaterialDesignThemes" Version="5.3.2" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Resource Include="Logo.png" />
+  </ItemGroup>
+
 </Project>

@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
         mc:Ignorable="d"
-        Title="NexusLink Desktop" Height="800" Width="1200"
+        Title="NexusLink Desktop" Height="800" Width="1200" Icon="Logo.png"
         Background="#F8F9FA" FontFamily="Inter, Segoe UI" WindowStartupLocation="CenterScreen">
     
     <Window.Resources>
