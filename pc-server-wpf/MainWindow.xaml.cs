@@ -13,21 +13,25 @@ using System.IO;
 using System.Net.NetworkInformation;
 using System.Linq;
 
-namespace SyncLinkServer
+namespace NexusLink
 {
     public partial class MainWindow : Window
     {
-        private UdpClient _udpClient;
-        private TcpListener _tcpListener;
-        private TcpListener _fileListener;
-        private TcpListener _fileSendListener;
+        private UdpClient _udpClient = null!;
+        private SecureTransport _security = null!;
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<TcpClient, Stream> _commandStreams = new();
+        private readonly SemaphoreSlim _clientSlots = new(16, 16);
+        private TcpListener _tcpListener = null!;
+        private TcpListener _fileListener = null!;
+        private TcpListener _fileSendListener = null!;
         private string _lastClipboardText = "";
         private bool _isRunning = true;
         
-        private string _expectedFilename = "";
-        private long _expectedFilesize = 0;
+        private FileTransfers _transfers = null!;
+        private AndroidBridge _bridge = null!;
+        private System.Windows.Forms.NotifyIcon _tray = null!;
         private List<TcpClient> _connectedClients = new List<TcpClient>();
-        private string _fileToSend = "";
+
         
         // Global variables for sync speed and storage
         private string _lastSyncSpeed = "0 KB/s";
@@ -42,15 +46,37 @@ namespace SyncLinkServer
 
         private void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
+            _security = SecureTransport.LoadOrCreate();
+            _transfers = new FileTransfers(_security, (category, text) => Dispatcher.BeginInvoke(() => AddLog(category, text)));
+            _bridge = new AndroidBridge(text => Dispatcher.BeginInvoke(() => TxtBridgeStatus.Text = text),
+                text => Dispatcher.BeginInvoke(() => {
+                    try {
+                        _lastClipboardText = text;
+                        if (text.Length > 0) System.Windows.Clipboard.SetText(text);
+                        AddLog("Clipboard", "Received clipboard from phone (ADB)");
+                    } catch { }
+                }));
+            _tray = new System.Windows.Forms.NotifyIcon {
+                Icon = System.Drawing.SystemIcons.Application, Text = "NexusLink", Visible = true
+            };
+            _tray.DoubleClick += (_, _) => { Show(); Activate(); };
+            LoadSyncSettings();
             StartUdpListener();
             StartTcpListener();
             StartClipboardMonitor();
             StartSystemStatsMonitor();
         }
 
-        private void MainWindow_Closing(object sender, System.ComponentModel.CancelEventArgs e)
+        private void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
         {
             _isRunning = false;
+            _bridge?.Dispose();
+            _tray?.Dispose();
+            _security?.Dispose();
+            if (_clipboardSource != null) {
+                RemoveClipboardFormatListener(_clipboardSource.Handle);
+                _clipboardSource.RemoveHook(ClipboardMessage);
+            }
             _udpClient?.Close();
             _tcpListener?.Stop();
             _fileListener?.Stop();
@@ -102,8 +128,10 @@ namespace SyncLinkServer
                 while (_isRunning)
                 {
                     var client = await _tcpListener.AcceptTcpClientAsync();
-                    lock (_connectedClients) { _connectedClients.Add(client); }
-                    _ = HandleClientAsync(client);
+                    client.NoDelay = true;
+                    client.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
+                    if (!_clientSlots.Wait(0)) { client.Close(); continue; }
+                    _ = AuthenticateClientAsync(client);
                 }
             }
             catch (Exception ex)
@@ -115,9 +143,24 @@ namespace SyncLinkServer
             }
         }
 
-        private async Task HandleClientAsync(TcpClient client)
+        private async Task AuthenticateClientAsync(TcpClient client)
         {
-            string remoteIp = ((IPEndPoint)client.Client.RemoteEndPoint).Address.ToString();
+            try {
+                var stream = await _security.AcceptAsync(client);
+                _commandStreams[client] = stream;
+                lock (_connectedClients) _connectedClients.Add(client);
+                await HandleClientAsync(client, stream);
+            }
+            catch { client.Close(); }
+            finally { _commandStreams.TryRemove(client, out _); _clientSlots.Release(); }
+        }
+
+        private Stream CommandStream(TcpClient client) => _commandStreams.TryGetValue(client, out var stream)
+            ? stream : throw new IOException("Device is not paired");
+
+        private async Task HandleClientAsync(TcpClient client, Stream secureStream)
+        {
+            string remoteIp = ((IPEndPoint)client.Client.RemoteEndPoint!).Address.ToString();
             Dispatcher.Invoke(() => AddLog("Connection", $"Device connected: {remoteIp}"));
             
             CancellationTokenSource cts = new CancellationTokenSource();
@@ -143,24 +186,20 @@ namespace SyncLinkServer
                         } catch { }
 
                         string infoPacket = $"INFO:{hostname}:{batteryLevel}:{isCharging}:{deviceType}:{_lastStorageText}:{_lastSyncSpeed}\n";
-                        byte[] infoBytes = Encoding.UTF8.GetBytes(infoPacket);
-                        await client.GetStream().WriteAsync(infoBytes, 0, infoBytes.Length, cts.Token);
+                        await Wire.SendAsync(CommandStream(client), infoPacket.TrimEnd('\n'), cts.Token);
                     } catch { break; }
                 }
             });
 
             try
             {
-                using (var stream = client.GetStream())
+                using (var stream = secureStream)
                 {
-                    byte[] buffer = new byte[4096];
                     while (_isRunning)
                     {
-                        int bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length);
-                        if (bytesRead == 0) break;
-                        
-                        string data = Encoding.UTF8.GetString(buffer, 0, bytesRead);
-                        ProcessCommand(data, stream);
+                        using var idle = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+                        string data = await Wire.ReadAsync(stream, idle.Token);
+                        ProcessCommand(data);
                     }
                 }
             }
@@ -182,7 +221,7 @@ namespace SyncLinkServer
             }
         }
 
-        private void ProcessCommand(string data, NetworkStream stream)
+        private void ProcessCommand(string data)
         {
             if (data.StartsWith("INFO:"))
             {
@@ -244,147 +283,88 @@ namespace SyncLinkServer
                 string text = data.Substring(5);
                 Dispatcher.Invoke(() => {
                     _lastClipboardText = text;
-                    try { System.Windows.Clipboard.SetText(text); } catch { }
-                    AddLog("Clipboard", $"Received: {text.Substring(0, Math.Min(20, text.Length))}...");
+                    try { if (text.Length > 0) System.Windows.Clipboard.SetText(text); } catch { }
+                    AddLog("Clipboard", "Received clipboard from phone");
                 });
             }
-            else if (data.StartsWith("FILE_REQ:"))
+            else if (data.StartsWith("NOTIFY:"))
             {
-                var parts = data.Split(':');
-                if (parts.Length >= 3)
-                {
-                    _expectedFilename = parts[1];
-                    if (long.TryParse(parts[2], out long size))
-                    {
-                        _expectedFilesize = size;
-                        byte[] reply = Encoding.UTF8.GetBytes("FILE_ACCEPT");
-                        stream.Write(reply, 0, reply.Length);
-                    }
-                }
+                using var notification = System.Text.Json.JsonDocument.Parse(data.Substring(7));
+                string app = notification.RootElement.GetProperty("app").GetString() ?? "Android";
+                string title = notification.RootElement.GetProperty("title").GetString() ?? "";
+                string text = notification.RootElement.GetProperty("text").GetString() ?? "";
+                Dispatcher.BeginInvoke(() => {
+                    AddLog("Notification", $"{app}: {title} — {text}");
+                    if (ChkDesktopNotifications.IsChecked == true)
+                        _tray.ShowBalloonTip(5000, (app + " · " + title).Substring(0, Math.Min(63, app.Length + title.Length + 3)),
+                            string.IsNullOrEmpty(text) ? "New phone notification" : text.Substring(0, Math.Min(255, text.Length)), System.Windows.Forms.ToolTipIcon.Info);
+                });
             }
         }
-        
+
         private async Task AcceptFileClientsAsync()
         {
             while (_isRunning)
             {
-                try
-                {
-                    var fileClient = await _fileListener.AcceptTcpClientAsync();
-                    fileClient.ReceiveBufferSize = 2 * 1024 * 1024;
-                    if (!string.IsNullOrEmpty(_expectedFilename) && _expectedFilesize > 0)
-                    {
-                        string targetDir = Path.Combine(Environment.CurrentDirectory, "received_files");
-                        Directory.CreateDirectory(targetDir);
-                        string filePath = Path.Combine(targetDir, _expectedFilename);
-                        long expectedSize = _expectedFilesize;
-                        
-                        _expectedFilename = "";
-                        _expectedFilesize = 0;
-                        
-                        _ = Task.Run(async () => {
-                            try {
-                                using (var ns = fileClient.GetStream())
-                                using (var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write))
-                                {
-                                    byte[] buffer = new byte[1024 * 1024];
-                                    long totalRead = 0;
-                                    while (totalRead < expectedSize)
-                                    {
-                                        int read = await ns.ReadAsync(buffer, 0, buffer.Length);
-                                        if (read == 0) break;
-                                        await fs.WriteAsync(buffer, 0, read);
-                                        totalRead += read;
-                                    }
-                                }
-                                Dispatcher.Invoke(() => AddLog("File", $"Received: {Path.GetFileName(filePath)}"));
-                            }
-                            catch (Exception ex) {
-                                Dispatcher.Invoke(() => AddLog("Error", $"File transfer failed: {ex.Message}"));
-                            }
-                            finally {
-                                fileClient.Close();
-                            }
-                        });
-                    }
-                    else
-                    {
-                        fileClient.Close();
-                    }
-                }
-                catch { }
+                try { var client = await _fileListener.AcceptTcpClientAsync(); _ = _transfers.ReceiveAsync(client); }
+                catch when (!_isRunning) { break; }
+                catch (Exception e) { _ = Dispatcher.BeginInvoke(() => AddLog("Error", e.Message)); }
             }
         }
-        
         private async Task AcceptFileDownloadClientsAsync()
         {
             while (_isRunning)
             {
-                try
-                {
-                    var fileClient = await _fileSendListener.AcceptTcpClientAsync();
-                    fileClient.SendBufferSize = 2 * 1024 * 1024;
-                    if (!string.IsNullOrEmpty(_fileToSend))
-                    {
-                        string file = _fileToSend;
-                        _fileToSend = ""; // Clear it for next transfer
-                        
-                        _ = Task.Run(async () => {
-                            try {
-                                using (var ns = fileClient.GetStream())
-                                using (var fs = new FileStream(file, FileMode.Open, FileAccess.Read))
-                                {
-                                    await fs.CopyToAsync(ns, 1024 * 1024);
-                                }
-                                Dispatcher.Invoke(() => AddLog("File", $"Sent: {Path.GetFileName(file)}"));
-                            }
-                            catch (Exception ex) {
-                                Dispatcher.Invoke(() => AddLog("Error", $"File sending failed: {ex.Message}"));
-                            }
-                            finally {
-                                fileClient.Close();
-                            }
-                        });
-                    }
-                    else
-                    {
-                        fileClient.Close();
-                    }
-                }
-                catch { }
+                try { var client = await _fileSendListener.AcceptTcpClientAsync(); _ = _transfers.SendAsync(client); }
+                catch when (!_isRunning) { break; }
+                catch (Exception e) { _ = Dispatcher.BeginInvoke(() => AddLog("Error", e.Message)); }
             }
         }
 
-        private async void StartClipboardMonitor()
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool AddClipboardFormatListener(IntPtr handle);
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool RemoveClipboardFormatListener(IntPtr handle);
+        private System.Windows.Interop.HwndSource? _clipboardSource;
+        private void StartClipboardMonitor()
         {
-            while (_isRunning)
+            _clipboardSource = System.Windows.Interop.HwndSource.FromHwnd(new System.Windows.Interop.WindowInteropHelper(this).Handle);
+            _clipboardSource.AddHook(ClipboardMessage);
+            AddClipboardFormatListener(_clipboardSource.Handle);
+        }
+        private IntPtr ClipboardMessage(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
+        {
+            if (message == 0x031D) _ = PublishClipboardAsync();
+            return IntPtr.Zero;
+        }
+        private async Task PublishClipboardAsync()
+        {
+            // Clipboard can briefly be locked by the copying app; retry off the message handler.
+            for (int attempt = 0; attempt < 3; attempt++)
             {
-                await Task.Delay(1000);
-                Dispatcher.Invoke(() =>
-                {
-                    try
-                    {
-                        if (System.Windows.Clipboard.ContainsText())
-                        {
-                            string currentClip = System.Windows.Clipboard.GetText();
-                            if (currentClip != _lastClipboardText && !string.IsNullOrEmpty(currentClip))
-                            {
-                                _lastClipboardText = currentClip;
-                                byte[] clipData = Encoding.UTF8.GetBytes($"CLIP:{currentClip}");
-                                lock (_connectedClients)
-                                {
-                                    foreach (var c in _connectedClients)
-                                    {
-                                        try { c.GetStream().Write(clipData, 0, clipData.Length); } catch { }
-                                    }
-                                }
-                                AddLog("Clipboard", "Copied to PC clipboard.");
-                            }
-                        }
-                    }
-                    catch { }
-                });
+                try {
+                    if (!System.Windows.Clipboard.ContainsText()) return;
+                    string text = System.Windows.Clipboard.GetText();
+                    if (string.IsNullOrEmpty(text) || text == _lastClipboardText) return;
+                    _lastClipboardText = text;
+                    try { await _bridge.SendClipboardAsync(text); } catch { }
+                    await BroadcastAsync("CLIP:" + text);
+                    AddLog("Clipboard", "Clipboard synchronized");
+                    return;
+                }
+                catch { await Task.Delay(30); }
             }
+        }
+        private async Task BroadcastAsync(string packet)
+        {
+            TcpClient[] clients;
+            lock (_connectedClients) clients = _connectedClients.ToArray();
+            await Task.WhenAll(clients.Select(async client => {
+                try {
+                    using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                    await Wire.SendAsync(CommandStream(client), packet, timeout.Token);
+                } catch { client.Close(); }
+            }));
         }
 
         private async void StartSystemStatsMonitor()
@@ -397,7 +377,7 @@ namespace SyncLinkServer
             {
                 try
                 {
-                    NetworkInterface activeAdapter = null;
+                    NetworkInterface? activeAdapter = null;
                     long currentSent = 0;
                     long currentReceived = 0;
                     
@@ -425,7 +405,7 @@ namespace SyncLinkServer
                     if (firstRun) { speedText = "0 KB/s"; firstRun = false; }
 
                     // Storage
-                    DriveInfo drive = new DriveInfo(Path.GetPathRoot(Environment.CurrentDirectory));
+                    DriveInfo drive = new DriveInfo(Path.GetPathRoot(Environment.CurrentDirectory)!);
                     string storageText = "-- Free";
                     double storagePercent = 0;
                     if (drive.IsReady)
@@ -456,7 +436,7 @@ namespace SyncLinkServer
 
         private void AddLog(string category, string message)
         {
-            if (category != "File" && category != "Clipboard") return;
+            if (category != "File" && category != "Clipboard" && category != "Notification" && category != "Error") return;
             
             if (ListActivity.Children.Count > 0 && ListActivity.Children[0] is System.Windows.Controls.TextBlock tb && tb.Text == "No activity yet.")
             {
@@ -488,7 +468,7 @@ namespace SyncLinkServer
             }
         }
 
-        private void BtnOpenGallery_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        private async void BtnOpenGallery_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
             var ofd = new Microsoft.Win32.OpenFileDialog();
             ofd.Title = "Select File to Send";
@@ -496,109 +476,66 @@ namespace SyncLinkServer
             {
                 string filePath = ofd.FileName;
                 var fi = new FileInfo(filePath);
-                _fileToSend = filePath;
-                
-                byte[] packet = Encoding.UTF8.GetBytes($"FILE_SEND:{fi.Name}:{fi.Length}");
-                lock (_connectedClients)
-                {
-                    foreach (var c in _connectedClients)
-                    {
-                        try { c.GetStream().Write(packet, 0, packet.Length); } catch { }
-                    }
+                TcpClient[] clients;
+                lock (_connectedClients) clients = _connectedClients.ToArray();
+                if (clients.Length != 1) {
+                    System.Windows.MessageBox.Show("Hubungkan tepat satu HP untuk memilih tujuan transfer.", "NexusLink");
+                    return;
                 }
+                try {
+                    var client = clients[0];
+                    string ip = ((IPEndPoint)client.Client.RemoteEndPoint!).Address.ToString();
+                    using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                    await Wire.SendAsync(CommandStream(client), _transfers.Offer(filePath, ip), timeout.Token);
+                } catch (Exception ex) { AddLog("Error", ex.Message); }
             }
         }
 
-        private void BtnMirrorScreen_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        private async void BtnMirrorScreen_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
-            string scrcpyPath = Path.Combine(Environment.CurrentDirectory, "scrcpy", "scrcpy-win64-v2.4", "scrcpy.exe");
-            string adbPath = Path.Combine(Environment.CurrentDirectory, "scrcpy", "scrcpy-win64-v2.4", "adb.exe");
-            
-            if (!File.Exists(scrcpyPath))
-            {
-                scrcpyPath = Path.Combine(Environment.CurrentDirectory, "scrcpy", "scrcpy.exe");
-                adbPath = Path.Combine(Environment.CurrentDirectory, "scrcpy", "adb.exe");
-            }
-            
-            if (!File.Exists(scrcpyPath))
-            {
-                System.Windows.MessageBox.Show("Modul Screen Mirroring sedang diunduh. Harap tunggu beberapa saat lalu coba lagi.", "NexusLink", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
-                return;
-            }
+            try { await _bridge.MirrorAsync(); }
+            catch (Exception ex) { TxtBridgeStatus.Text = ex.Message; }
+        }
 
-            string targetIp = "";
-            lock (_connectedClients)
-            {
-                if (_connectedClients.Count > 0)
-                {
-                    targetIp = ((IPEndPoint)_connectedClients[0].Client.RemoteEndPoint).Address.ToString();
-                }
-            }
+        private void CopyPairing_Click(object sender, RoutedEventArgs e)
+        {
+            try {
+                string code = _security.PairingCode;
+                _lastClipboardText = code; // Never broadcast pairing credentials through clipboard sync.
+                System.Windows.Clipboard.SetText(code);
+                TxtBridgeStatus.Text = "Kode pairing disalin. Tempel di Settings NexusLink HP melalui jalur tepercaya.";
+            } catch (Exception ex) { AddLog("Error", ex.Message); }
+        }
 
-            Task.Run(() => {
-                string adbSerial = "";
-                if (!string.IsNullOrEmpty(targetIp))
-                {
-                    try {
-                        Dispatcher.Invoke(() => AddLog("Mirror", $"Connecting ADB to {targetIp}..."));
-                        var adbProc = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo {
-                            FileName = adbPath,
-                            Arguments = $"connect {targetIp}:5555",
-                            UseShellExecute = false,
-                            CreateNoWindow = true
-                        });
-                        adbProc.WaitForExit();
-                        
-                        // Find the correct serial for this IP
-                        var adbDevices = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo {
-                            FileName = adbPath,
-                            Arguments = "devices",
-                            UseShellExecute = false,
-                            RedirectStandardOutput = true,
-                            CreateNoWindow = true
-                        });
-                        string output = adbDevices.StandardOutput.ReadToEnd();
-                        adbDevices.WaitForExit();
-                        
-                        string usbSerial = "";
-                        string tcpSerial = "";
-                        foreach (string line in output.Split('\n'))
-                        {
-                            if (line.Contains("device") && !line.Contains("devices") && !line.Contains("emulator"))
-                            {
-                                string serial = line.Split('\t')[0].Trim();
-                                if (serial.Contains("."))
-                                {
-                                    if (serial.Contains(targetIp)) tcpSerial = serial;
-                                }
-                                else
-                                {
-                                    usbSerial = serial;
-                                }
-                            }
-                        }
-                        
-                        // Prioritize USB if plugged in, otherwise fallback to Wi-Fi
-                        if (!string.IsNullOrEmpty(usbSerial))
-                            adbSerial = usbSerial;
-                        else if (!string.IsNullOrEmpty(tcpSerial))
-                            adbSerial = tcpSerial;
-                        
-                    } catch { }
+        private bool _settingsLoaded;
+        private string SettingsPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NexusLink", "sync.json");
+        private void LoadSyncSettings()
+        {
+            try {
+                if (File.Exists(SettingsPath)) {
+                    using var settings = System.Text.Json.JsonDocument.Parse(File.ReadAllText(SettingsPath));
+                    var root = settings.RootElement;
+                    ChkAutoClipboard.IsChecked = root.GetProperty("clipboard").GetBoolean();
+                    TxtAdbDevice.Text = root.GetProperty("device").GetString();
+                    ChkDesktopNotifications.IsChecked = root.GetProperty("notifications").GetBoolean();
+                    CmbMirrorProfile.SelectedIndex = root.GetProperty("profile").GetInt32() == 1 ? 1 : 0;
                 }
-
-                try {
-                    Dispatcher.Invoke(() => AddLog("Mirror", "Starting Screen Mirror..."));
-                    string serialArg = string.IsNullOrEmpty(adbSerial) ? "" : $"-s {adbSerial} ";
-                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo {
-                        FileName = "cmd.exe",
-                        Arguments = $"/c \"\"{scrcpyPath}\" {serialArg}--turn-screen-off --stay-awake --keyboard=uhid --mouse=uhid --video-bit-rate 6M --max-size 1280 --max-fps 60 || pause\"",
-                        UseShellExecute = true
-                    });
-                } catch (Exception ex) {
-                    Dispatcher.Invoke(() => System.Windows.MessageBox.Show($"Gagal membuka screen mirror: {ex.Message}", "Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error));
-                }
-            });
+            } catch { }
+            _settingsLoaded = true;
+            ApplySyncSettings(null, null);
+        }
+        private void ApplySyncSettings(object? sender, RoutedEventArgs? e)
+        {
+            if (!_settingsLoaded || _bridge == null) return;
+            string profile = (CmbMirrorProfile.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Wi-Fi cepat";
+            _bridge.Configure(ChkAutoClipboard.IsChecked == true, TxtAdbDevice.Text, profile);
+            try {
+                Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
+                File.WriteAllText(SettingsPath, System.Text.Json.JsonSerializer.Serialize(new {
+                    clipboard = ChkAutoClipboard.IsChecked == true, device = TxtAdbDevice.Text,
+                    notifications = ChkDesktopNotifications.IsChecked == true, profile = CmbMirrorProfile.SelectedIndex
+                }));
+            } catch (Exception ex) { AddLog("Error", ex.Message); }
         }
     }
 }

@@ -21,6 +21,26 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         val tvCurrentDirectory = findViewById<TextView>(R.id.tvCurrentDirectory)
+        val pairing = findViewById<android.widget.EditText>(R.id.editPairingCode)
+        pairing.setText(getSharedPreferences("NexusPrefs", MODE_PRIVATE).getString("PAIRING_CODE", ""))
+        findViewById<Button>(R.id.btnSavePairing).setOnClickListener {
+            val code = pairing.text.toString().trim()
+            if (!code.matches(Regex("[A-Fa-f0-9]{64}:[A-Fa-f0-9]{64}"))) {
+                pairing.error = "Tempel kode lengkap dari desktop"
+            } else {
+                getSharedPreferences("NexusPrefs", MODE_PRIVATE).edit().putString("PAIRING_CODE", code).apply()
+                android.widget.Toast.makeText(this, "Pairing disimpan; koneksi akan mencoba kembali", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+        findViewById<android.widget.Switch>(R.id.switchNotificationSync).apply {
+            isChecked = getSharedPreferences("NexusPrefs", MODE_PRIVATE).getBoolean("NOTIFICATION_SYNC", false)
+            setOnCheckedChangeListener { _, enabled ->
+                getSharedPreferences("NexusPrefs", MODE_PRIVATE).edit().putBoolean("NOTIFICATION_SYNC", enabled).apply()
+                if (enabled && !androidx.core.app.NotificationManagerCompat.getEnabledListenerPackages(this@SettingsActivity).contains(packageName)) {
+                    startActivity(Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                }
+            }
+        }
         val btnSelectDirectory = findViewById<Button>(R.id.btnSelectDirectory)
 
         val prefs = getSharedPreferences("NexusPrefs", Context.MODE_PRIVATE)

@@ -26,6 +26,8 @@
 /pc-server/*.log
 /pc-server/err.txt
 /pc-server/out.txt
+/pc-server/NexusFiles/
+/pc-server/imgui.ini
 
 # ========================
 # PC SERVER (WPF / .NET)
@@ -36,6 +38,8 @@
 /pc-server-wpf/.vs/
 /pc-server-wpf/*.user
 /pc-server-wpf/*.suo
+/tests/**/bin/
+/tests/**/obj/
 
 # ========================
 # UMUM (OS & Editor)
@@ -45,3 +49,14 @@
 *.iml
 .DS_Store
 Thumbs.db
+.env
+.env.*
+!.env.example
+*.pem
+*.pfx
+*.p12
+*.jks
+*.keystore
+*.log
+*.partial
+pairing-secret.enc

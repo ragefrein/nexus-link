@@ -1,35 +1,20 @@
 package com.nexuslink.client
 
-import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
-import android.provider.Settings
-import android.util.Log
-import android.view.Gravity
 import android.view.View
-import android.view.WindowManager
 import android.graphics.Color
-import android.graphics.PixelFormat
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
-import android.widget.ProgressBar
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Build
 import android.content.IntentFilter
-import android.os.BatteryManager
-import java.net.DatagramPacket
-import java.net.DatagramSocket
-import java.net.InetAddress
-import java.net.Socket
-import kotlin.concurrent.thread
 
 class MainActivity : AppCompatActivity() {
 
-    private var tcpSocket: Socket? = null
     private var lastClipboardText = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -59,27 +44,10 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Request SYSTEM_ALERT_WINDOW permission if not granted
-        if (!Settings.canDrawOverlays(this)) {
-            val intentOverlay = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
-            startActivity(intentOverlay)
+        if (Build.VERSION.SDK_INT >= 33 && androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 202)
         }
-
-        thread {
-            while (true) {
-                discoverAndConnectPc()
-                
-                try { tcpSocket?.close() } catch(e: Exception) {}
-                tcpSocket = null
-                updateConnectionUI(false, "")
-                
-                Thread.sleep(3000)
-            }
-        }
-        
-        thread {
-            startSystemStatsMonitor()
-        }
+        androidx.core.content.ContextCompat.startForegroundService(this, Intent(this, SyncService::class.java))
 
         // Load recent activity from SharedPreferences
         val prefs = getSharedPreferences("NexusPrefs", Context.MODE_PRIVATE)
@@ -87,19 +55,6 @@ class MainActivity : AppCompatActivity() {
         val lastSub = prefs.getString("LAST_ACT_SUB", null)
         if (lastTitle != null && lastSub != null) {
             updateActivityList("folder_zip", lastTitle, lastSub, "done")
-        }
-
-        // Monitor local clipboard changes
-        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clipboard.addPrimaryClipChangedListener {
-            val clip = clipboard.primaryClip
-            if (clip != null && clip.itemCount > 0) {
-                val text = clip.getItemAt(0).text?.toString()
-                if (text != null && text != lastClipboardText) {
-                    lastClipboardText = text 
-                    sendCommandToPc("CLIP:$text")
-                }
-            }
         }
 
         val bottomNav = findViewById<com.google.android.material.bottomnavigation.BottomNavigationView>(R.id.bottomNav)
@@ -127,80 +82,29 @@ class MainActivity : AppCompatActivity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) {
-            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            if (clipboard.hasPrimaryClip()) {
-                val clip = clipboard.primaryClip
-                if (clip != null && clip.itemCount > 0) {
-                    val text = clip.getItemAt(0).text?.toString()
-                    if (text != null && text != lastClipboardText) {
-                        lastClipboardText = text
-                        sendCommandToPc("CLIP:$text")
-                    }
-                }
+        if (hasFocus) SyncService.active?.applyClipboardOrSync()
+    }
+
+    private fun sendCommandToPc(packet: String) { SyncService.active?.send(packet) }
+
+    private val events = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val message = intent.getStringExtra("message") ?: return
+            when {
+                message.startsWith("CONNECTED:") -> updateConnectionUI(true, message.substring(10))
+                message == "DISCONNECTED" -> updateConnectionUI(false, "")
+                message.startsWith("ACTIVITY:") -> updateActivityList("folder_zip", message.substring(9), "Just now", "done")
+                message.startsWith("ERROR:") -> Toast.makeText(this@MainActivity, message.substring(6), Toast.LENGTH_LONG).show()
+                else -> handlePcMessage(message)
             }
         }
     }
-
-    // --- Floating Bubble for Android 10+ Clipboard Injection ---
-    private fun showFloatingClipboardButton(text: String) {
-        if (!Settings.canDrawOverlays(this)) {
-            return
-        }
-
-        runOnUiThread {
-            val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-            
-            val bubble = android.widget.Button(this)
-            bubble.text = "📋"
-            bubble.textSize = 24f
-            bubble.setBackgroundColor(Color.parseColor("#333333"))
-            bubble.setTextColor(Color.WHITE)
-
-            val params = WindowManager.LayoutParams(
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-                PixelFormat.TRANSLUCENT
-            )
-            params.gravity = Gravity.CENTER_VERTICAL or Gravity.END
-
-            bubble.setOnClickListener {
-                val intent = Intent(this, TransparentActivity::class.java)
-                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                intent.putExtra("CLIP_TEXT", text)
-                startActivity(intent)
-
-                if (bubble.parent != null) {
-                    windowManager.removeView(bubble)
-                }
-            }
-
-            windowManager.addView(bubble, params)
-
-            bubble.postDelayed({
-                if (bubble.parent != null) {
-                    bubble.performClick()
-                }
-            }, 1000)
-        }
+    override fun onStart() {
+        super.onStart()
+        androidx.core.content.ContextCompat.registerReceiver(this, events, IntentFilter(SyncService.EVENT), androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
+        updateConnectionUI(SyncService.connectedIp != null, SyncService.connectedIp.orEmpty())
     }
-    // -----------------------------------------------------------
-
-    private fun sendCommandToPc(packet: String) {
-        thread {
-            try {
-                if (tcpSocket?.isConnected == true) {
-                    val out = tcpSocket!!.getOutputStream()
-                    out.write(packet.toByteArray())
-                    out.flush()
-                }
-            } catch (e: Exception) {
-                Log.e("NEXUS", "Failed to send: ${e.message}")
-            }
-        }
-    }
+    override fun onStop() { unregisterReceiver(events); super.onStop() }
 
     private fun updateConnectionUI(isConnected: Boolean, ip: String) {
         runOnUiThread {
@@ -237,89 +141,12 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun discoverAndConnectPc() {
-        try {
-            val udpSocket = DatagramSocket()
-            udpSocket.broadcast = true
-            udpSocket.soTimeout = 10000 
-
-            val message = "NEXUS_DISCOVER".toByteArray()
-            val broadcastAddress = InetAddress.getByName("255.255.255.255")
-            val sendPacket = DatagramPacket(message, message.size, broadcastAddress, 5051)
-            udpSocket.send(sendPacket)
-
-            val buffer = ByteArray(1024)
-            val receivePacket = DatagramPacket(buffer, buffer.size)
-            udpSocket.receive(receivePacket)
-
-            val reply = String(receivePacket.data, 0, receivePacket.length)
-            val pcIp = receivePacket.address.hostAddress
-            udpSocket.close()
-
-            if (reply == "NEXUS_SERVER_HERE" && pcIp != null) {
-                // Cache the IP to allow seamless transparent sharing later!
-                val prefs = getSharedPreferences("NexusPrefs", Context.MODE_PRIVATE)
-                prefs.edit().putString("PC_IP", pcIp).apply()
-
-                tcpSocket = Socket(pcIp, 5050) 
-                tcpSocket!!.soTimeout = 15000 // Detect network drops
-                
-                if (tcpSocket!!.isConnected) {
-                    Log.d("NEXUS", "Connected to PC!")
-                    updateConnectionUI(true, pcIp)
-                    startInfoSender()
-                    listenForPcMessages()
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-    
-    private fun startInfoSender() {
-        thread {
-            try {
-                while (tcpSocket?.isConnected == true) {
-                    val batteryIntent = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-                    val level = batteryIntent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: 100
-                    val scale = batteryIntent?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: 100
-                    val batteryPct = (level * 100) / scale.coerceAtLeast(1)
-                    val status = batteryIntent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
-                    val isCharging = if (status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL) "1" else "0"
-                    
-                    val deviceName = Build.MODEL
-                    val infoPacket = "INFO:$deviceName:$batteryPct:$isCharging:Smartphone\n"
-                    
-                    try {
-                        val out = tcpSocket!!.getOutputStream()
-                        out.write(infoPacket.toByteArray())
-                        out.flush()
-                    } catch (e: Exception) {}
-                    
-                    Thread.sleep(5000)
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-    }
-
-    private fun listenForPcMessages() {
-        try {
-            val inputStream = tcpSocket!!.getInputStream()
-            val buffer = ByteArray(4096)
-            
-            while (true) {
-                val bytesRead = inputStream.read(buffer)
-                if (bytesRead == -1) break 
-                
-                val incomingMsg = String(buffer, 0, bytesRead)
-                
+    private fun handlePcMessage(incomingMsg: String) {
                 if (incomingMsg.startsWith("CLIP:")) {
                     val clipboardContent = incomingMsg.substring(5)
                     lastClipboardText = clipboardContent
                     
-                    showFloatingClipboardButton(clipboardContent)
+                    if (hasWindowFocus()) SyncService.active?.applyClipboardOrSync()
                     updateActivityList("content_paste", "Clipboard Text", "Received from PC", "done")
                 } 
                 else if (incomingMsg.startsWith("INFO:")) {
@@ -377,75 +204,6 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
                 }
-                else if (incomingMsg.startsWith("FILE_SEND:")) {
-                    val parts = incomingMsg.split(":")
-                    if (parts.size >= 3) {
-                        val name = parts[1]
-                        val size = parts[2].toLongOrNull() ?: 0L
-                        
-                        thread {
-                            try {
-                                val ip = tcpSocket?.inetAddress?.hostAddress
-                                if (ip != null) {
-                                    val downloadSocket = Socket(ip, 5053)
-                                    val input = java.io.BufferedInputStream(downloadSocket.getInputStream(), 1024 * 1024)
-                                    
-                                    val prefs = getSharedPreferences("NexusPrefs", Context.MODE_PRIVATE)
-                                    val treeUriStr = prefs.getString("DOWNLOAD_DIR_URI", null)
-                                    
-                                    val outStream: java.io.OutputStream
-                                    if (treeUriStr != null) {
-                                        val treeUri = android.net.Uri.parse(treeUriStr)
-                                        val pickedDir = androidx.documentfile.provider.DocumentFile.fromTreeUri(this@MainActivity, treeUri)
-                                        var newFile = pickedDir?.findFile(name)
-                                        if (newFile == null) {
-                                            newFile = pickedDir?.createFile("*/*", name)
-                                        }
-                                        if (newFile != null) {
-                                            outStream = contentResolver.openOutputStream(newFile.uri) ?: throw java.lang.Exception("Cannot open stream")
-                                        } else {
-                                            val downloadsDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
-                                            val file = java.io.File(downloadsDir, name)
-                                            outStream = java.io.FileOutputStream(file)
-                                        }
-                                    } else {
-                                        val downloadsDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
-                                        val file = java.io.File(downloadsDir, name)
-                                        outStream = java.io.FileOutputStream(file)
-                                    }
-                                    val out = java.io.BufferedOutputStream(outStream, 1024 * 1024)
-                                    
-                                    runOnUiThread { Toast.makeText(this@MainActivity, "📥 Downloading $name...", Toast.LENGTH_SHORT).show() }
-                                    
-                                    downloadSocket.receiveBufferSize = 2 * 1024 * 1024
-                                    val buffer = ByteArray(1024 * 1024)
-                                    var bytesRead: Int
-                                    var totalRead = 0L
-                                    while (input.read(buffer).also { bytesRead = it } != -1) {
-                                        out.write(buffer, 0, bytesRead)
-                                        totalRead += bytesRead
-                                        if (totalRead >= size) break
-                                    }
-                                    out.flush()
-                                    out.close()
-                                    input.close()
-                                    downloadSocket.close()
-                                    
-                                    runOnUiThread { 
-                                        Toast.makeText(this@MainActivity, "✅ File received: $name", Toast.LENGTH_SHORT).show()
-                                        updateActivityList("image", name, "Received from PC", "done")
-                                    }
-                                }
-                            } catch (e: Exception) {
-                                runOnUiThread { Toast.makeText(this@MainActivity, "❌ Failed to download file", Toast.LENGTH_SHORT).show() }
-                            }
-                        }
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            Log.e("NEXUS", "Disconnected: ${e.message}")
-        }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -462,58 +220,4 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun startSystemStatsMonitor() {
-        var lastTxBytes = android.net.TrafficStats.getTotalTxBytes()
-        var lastRxBytes = android.net.TrafficStats.getTotalRxBytes()
-        var firstRun = true
-        
-        while (true) {
-            try {
-                Thread.sleep(1000)
-                
-                // Network Speed
-                val currentTx = android.net.TrafficStats.getTotalTxBytes()
-                val currentRx = android.net.TrafficStats.getTotalRxBytes()
-                val diffTx = currentTx - lastTxBytes
-                val diffRx = currentRx - lastRxBytes
-                lastTxBytes = currentTx
-                lastRxBytes = currentRx
-                
-                var speedKbps = (diffTx + diffRx) / 1024.0
-                if (firstRun) { speedKbps = 0.0; firstRun = false; }
-                val speedText = if (speedKbps > 1024) String.format("%.1f MB/s", speedKbps / 1024.0) else String.format("%.0f KB/s", speedKbps)
-                
-                // Storage
-                val path = android.os.Environment.getDataDirectory()
-                val stat = android.os.StatFs(path.path)
-                val blockSize = stat.blockSizeLong
-                val totalBlocks = stat.blockCountLong
-                val availableBlocks = stat.availableBlocksLong
-                
-                val totalSize = totalBlocks * blockSize
-                val availableSize = availableBlocks * blockSize
-                val freeGB = availableSize / (1024.0 * 1024.0 * 1024.0)
-                val totalGB = totalSize / (1024.0 * 1024.0 * 1024.0)
-                val percentFree = if (totalGB > 0) (freeGB / totalGB) * 100 else 0.0
-                val percentUsed = 100.0 - percentFree
-                
-                val storageText = String.format("%.0f%% Free (%.1f GB)", percentFree, freeGB)
-                val storagePercent = percentUsed.toInt()
-                
-                runOnUiThread {
-                    val tvSyncSpeed = findViewById<TextView>(R.id.tvSyncSpeed)
-                    tvSyncSpeed?.text = speedText
-                    // DO NOT update tvStorageInfo here because user said Android UI uses PC's storage? Wait:
-                    // "sedangkan di pc utuk storage nya itu ambil storage hp saya" -> Android UI storage uses PC's?
-                    // Actually, let's keep Android UI storage as PC's storage. It was already parsed from INFO.
-                }
-                
-                // Send Phone STATS to PC
-                sendCommandToPc("STATS:$storageText:$storagePercent:$speedText")
-                
-            } catch (e: Exception) {
-                // Ignore
-            }
-        }
-    }
 }

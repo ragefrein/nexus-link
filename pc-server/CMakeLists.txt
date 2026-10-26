@@ -3,6 +3,11 @@ cmake_minimum_required(VERSION 3.10)
 # Nama proyek dan bahasa yang digunakan (C++)
 project(NexusServer VERSION 1.0 LANGUAGES CXX)
 
+option(NEXUSLINK_ENABLE_UNSAFE_LEGACY_SERVER "Build the archived C++ server without TLS/pairing" OFF)
+if(NOT NEXUSLINK_ENABLE_UNSAFE_LEGACY_SERVER)
+    message(FATAL_ERROR "The C++ server is archived and has no authentication. Use pc-server-wpf/NexusLink.csproj. For isolated legacy development only, explicitly set NEXUSLINK_ENABLE_UNSAFE_LEGACY_SERVER=ON.")
+endif()
+
 # Tentukan versi standar C++ (kita gunakan C++17 yang modern)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)

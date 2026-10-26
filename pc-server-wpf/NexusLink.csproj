@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <Resource Include="Logo.png" />
+    <Content Include="scrcpy\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

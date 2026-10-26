@@ -2,7 +2,7 @@ using System.Configuration;
 using System.Data;
 using System.Windows;
 
-namespace SyncLinkServer;
+namespace NexusLink;
 
 /// <summary>
 /// Interaction logic for App.xaml

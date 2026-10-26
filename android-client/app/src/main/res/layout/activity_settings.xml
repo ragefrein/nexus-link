@@ -26,6 +26,28 @@
         android:orientation="vertical"
         android:padding="16dp">
 
+        <EditText
+            android:id="@+id/editPairingCode"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:hint="Kode pairing dari desktop" android:inputType="textPassword"
+            android:importantForAutofill="no" android:maxLength="129" android:singleLine="true" />
+        <Button android:id="@+id/btnSavePairing" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:text="Simpan pairing laptop" />
+
+        <Switch
+            android:id="@+id/switchNotificationSync"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp"
+            android:text="Kirim notifikasi HP ke laptop" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            android:text="Aktifkan akses notifikasi saat diminta. Isi notifikasi akan diteruskan ke PC di jaringan lokal. Clipboard otomatis dari aplikasi lain memerlukan USB/Wireless debugging yang diotorisasi ke laptop."
+            android:textColor="#424753" />
+
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"

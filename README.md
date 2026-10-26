@@ -1,7 +1,7 @@
 # 🔗 NexusLink
 
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Android-blue?style=flat-square)
-![C#](https://img.shields.io/badge/C%23-.NET%208%20WPF-512BD4?style=flat-square&logo=c-sharp)
+![C#](https://img.shields.io/badge/C%23-.NET%2010%20WPF-512BD4?style=flat-square&logo=c-sharp)
 ![Kotlin](https://img.shields.io/badge/Kotlin-Native-7F52FF?style=flat-square&logo=kotlin)
 ![Status](https://img.shields.io/badge/Status-Beta-success?style=flat-square)
 
@@ -67,16 +67,22 @@ sequenceDiagram
 ## 🛠️ Technology Stack
 Built from scratch with a focus on native performance and modern UI guidelines:
 - **Client (Mobile):** Native Android (Kotlin), XML Layouts, Android SDK, standard `java.net.Socket`. Features native OS integrations like Share Intent Receivers and Floating Window Services.
-- **Server (Desktop):** C# .NET 8 WPF (Windows Presentation Foundation). Utilizing native TCP/UDP Listeners, `DriveInfo`, and `PowerStatus` APIs for deep Windows integration. UI designed with Material Design In XAML.
+- **Server (Desktop):** C# .NET 10 WPF (Windows Presentation Foundation). Utilizing native TCP/UDP Listeners, `DriveInfo`, and `PowerStatus` APIs for deep Windows integration. UI designed with Material Design In XAML.
 
 ---
+
+## Seamless sync
+
+See [the setup and validation guide](docs/seamless-sync.md) for automatic clipboard sync, Windows notifications, mirroring profiles, and protocol v2 file transfers. Update both the desktop app and Android APK together, then pair the phone using the desktop pairing code. LAN control and file connections require TLS and pairing; there is no plaintext fallback.
+
+The old `pc-server` C++ implementation is archived and its build is disabled by default because it lacks authentication. Use the WPF desktop server.
 
 ## 💻 Developer Guide (Getting Started)
 
 Want to build and run NexusLink locally? Follow these steps:
 
 ### 1. Running the Windows PC Server
-Ensure you have the [.NET 8 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/8.0) installed.
+Ensure you have the .NET 10 SDK installed (the project targets `net10.0-windows`).
 ```powershell
 # Navigate to the server directory
 cd pc-server-wpf

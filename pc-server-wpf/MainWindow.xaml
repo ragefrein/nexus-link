@@ -1,4 +1,4 @@
-<Window x:Class="SyncLinkServer.MainWindow"
+<Window x:Class="NexusLink.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -121,6 +121,21 @@
             <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
                 <StackPanel Margin="32">
                     <TextBlock Text="Device Dashboard" FontSize="28" FontWeight="Bold" Foreground="#191C1D" Margin="0,0,0,24"/>
+                    <Border Background="White" CornerRadius="12" Padding="20" Margin="0,0,0,24">
+                        <StackPanel>
+                            <Button Content="Salin kode pairing laptop" Click="CopyPairing_Click" Margin="0,0,0,12" />
+                            <TextBlock Text="Pairing sekali di Settings HP diperlukan untuk koneksi LAN terenkripsi." TextWrapping="Wrap" Margin="0,0,0,12" />
+                            <CheckBox x:Name="ChkAutoClipboard" Content="Clipboard HP otomatis (USB / Wireless debugging)" Checked="ApplySyncSettings" Unchecked="ApplySyncSettings" Margin="0,0,0,12" />
+                            <TextBlock Text="Otorisasi debugging di HP sekali. Kosongkan perangkat jika hanya satu HP terhubung ke ADB." TextWrapping="Wrap" Margin="0,0,0,8" />
+                            <TextBox x:Name="TxtAdbDevice" materialDesign:HintAssist.Hint="Serial ADB atau IP:port koneksi Wireless debugging" LostFocus="ApplySyncSettings" Margin="0,0,0,12" />
+                            <CheckBox x:Name="ChkDesktopNotifications" Content="Tampilkan notifikasi HP di Windows" IsChecked="True" Checked="ApplySyncSettings" Unchecked="ApplySyncSettings" Margin="0,0,0,12" />
+                            <ComboBox x:Name="CmbMirrorProfile" SelectedIndex="0" SelectionChanged="ApplySyncSettings" Margin="0,0,0,8">
+                                <ComboBoxItem Content="Wi-Fi cepat" />
+                                <ComboBoxItem Content="USB kualitas tinggi" />
+                            </ComboBox>
+                            <TextBlock x:Name="TxtBridgeStatus" Text="Clipboard otomatis belum diaktifkan" TextWrapping="Wrap" Foreground="#424753" />
+                        </StackPanel>
+                    </Border>
 
                     <!-- Bento Grid -->
                     <Grid>
